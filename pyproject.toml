@@ -13,6 +13,7 @@ dependencies = [
     "ollama>=0.4.7", # The official Python client for Ollama.
     "langchain-text-splitters>=0.3.6", # LangChain text splitting utilities
     "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain ## TODO: May not be required
+    "matplotlib>=3.9.0", 
 ]
 
 [project.optional-dependencies]
