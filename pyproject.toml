@@ -1,0 +1,50 @@
+[project]
+name = "ppcs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Eirini", email = "email@example.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.10.6", # Data validation using Python type hints
+    "python-dotenv>=1.0.1", # Read key-value pairs from a .env file and set them as env vars
+    "ollama>=0.4.7", # The official Python client for Ollama.
+    "langchain-text-splitters>=0.3.6", # LangChain text splitting utilities
+    "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain ## TODO: May not be required
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
+    "ipython>=8.31.0", # IPython: Productive Interactive Computing
+    "ipdb>=0.13.13", # IPython-enabled pdb
+    "tqdm>=4.67.1", # Fast, Extensible Progress Meter
+]
+
+[project.scripts]
+ppcs = "ppcs:app"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+lint.select = ["E", "F", "I", "N", "UP", "ANN", "B", "A", "C4"]
+        # `E`: Pylint error messages
+        # `F`: Pyflakes
+        # `I`: isort
+        # `N`: pep8-naming
+        # `UP`: pyupgrade
+        # `ANN`: flake8-annotations
+        # `B`: flake8-bugbear
+        # `A`: flake8-builtins
+        # `C4`: flake8-comprehensions
+line-length = 90
+target-version = "py313"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
