@@ -22,8 +22,8 @@ def get_files_in_documents_directory(
         list[str]: A list of file names in the documents directory.
 
     Examples:
-        >>> get_files_in_documents_directory('/path/to/example_text_directory')
-        ['file1.txt', 'file2.txt']
+        >>> get_files_in_documents_directory('example_text/')
+        ['doc_4.txt', 'doc_1.txt', 'test_doc.txt']
         >>> get_files_in_documents_directory('/nonexistent/directory')
         []
     """
@@ -56,14 +56,15 @@ def read_documents_from_files(
         list[str]: A list containing the contents of each file.
 
     Examples:
-    >>> read_documents_from_files(['file1.txt', 'file2.txt'], '/path/to/documents')
-    ['Content of file1.txt', 'Content of file2.txt']
+    >>> read_documents_from_files(['test_doc.txt'], 'example_text/')
+    ['The sun is shining brightly today.\\n']
     """
     documents = []
     for filename in filenames:
         file_path = os.path.join(directory, filename)
         with open(file_path, encoding="utf-8") as file:
             documents.append(file.read())
+
     return documents
 
 
