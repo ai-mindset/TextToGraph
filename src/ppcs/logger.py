@@ -1,48 +1,71 @@
-"""This module defines a `Logger` class that configures and provides a logging instance
-with both file and console handlers, based on environment variables for log level
-and directory."""
+"""Set up and use a logging system with configurable levels and console output."""
 
+# %%
 import logging
-import os
+from typing import Literal
+
+# %% [markdown]
+# ## Logging
+# [logging levels](https://docs.python.org/3/library/logging.html#logging-levels)
+# | Level | Value | Description |
+# |---------|--------|-------------|
+# | `logging.NOTSET` | 0 | When set on a logger, indicates that ancestor loggers are to be consulted to determine the effective level. If that still resolves to NOTSET, then all events are logged. When set on a handler, all events are handled. |
+# | `logging.DEBUG` | 10 | Detailed information, typically only of interest to a developer trying to diagnose a problem. |
+# | `logging.INFO` | 20 | Confirmation that things are working as expected. |
+# | `logging.WARNING` | 30 | An indication that something unexpected happened, or that a problem might occur in the near future (e.g. 'disk space low'). The software is still working as expected. |
+# | `logging.ERROR` | 40 | Due to a more serious problem, the software has not been able to perform some function. |
+# | `logging.CRITICAL` | 50 | A serious error, indicating that the program itself may be unable to continue running. |
 
 
 # %%
-class Logger:
-    def __init__(
-        self,
-        namespace: str = "AppLogger",
-        log_dir: str = "logs",
-        log_file: str = "app.log",
-    ) -> None:
-        log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-        log_level = getattr(logging, log_level_str, logging.INFO)
-        self.logger = logging.getLogger(namespace)
-        self.logger.setLevel(log_level)
+def setup_logger(level: str | Literal[0, 10, 20, 30, 40, 50] = "INFO") -> logging.Logger:
+    """Set up a logger with specified level and console output.
 
-        # Ensure the logs directory exists
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+    Args:
+        level (str or int): The logging level as a string ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') or an integer value (10, 20, 30, 40, 50). Default is 'INFO'.
 
-        # Only add handlers if they are not already added
-        if not self.logger.hasHandlers():
-            # Create a file handler
-            file_handler = logging.FileHandler(os.path.join(log_dir, log_file))
-            file_handler.setLevel(log_level)
+    Returns:
+        logging.Logger: A configured logger object with console handler and specified format.
 
-            # Create a console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(log_level)
+    Examples:
+        >>> setup_logger(level="DEBUG").info("This is a debug message")
 
-            # Create a logging format
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            file_handler.setFormatter(formatter)
-            console_handler.setFormatter(formatter)
+    """
+    # Create a logger object
+    logger = logging.getLogger(__name__)
 
-            # Add the handlers to the logger
-            self.logger.addHandler(file_handler)
-            self.logger.addHandler(console_handler)
+    # Set the overall logging level of the logger
+    logger.setLevel(level)
 
-    def get_logger(self):
-        return self.logger
+    # Create a console handler (outputs to terminal)
+    ch = logging.StreamHandler()
+
+    # Set the logging level for the handler
+    ch.setLevel(level)
+
+    # Create a formatter that specifies the format of log messages
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    # Attach the formatter to the handler
+    ch.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(ch)
+
+    return logger
+
+
+# %% [markdown]
+# ## Main guard
+
+# %%
+if __name__ == "__main__":
+    # Set up the logger with INFO level
+    logger = setup_logger(logging.INFO)
+
+    # Log messages at different levels
+    logger.debug("This is a debug message.")
+    logger.info("This is an info message.")
+    logger.warning("This is a warning message.")
+    logger.error("This is an error message.")
+    logger.critical("This is a critical message.")
