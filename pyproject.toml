@@ -13,13 +13,13 @@ dependencies = [
     "ollama>=0.4.7", # The official Python client for Ollama.
     "langchain-text-splitters>=0.3.6", # LangChain text splitting utilities
     "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain ## TODO: May not be required
-    "matplotlib>=3.9.0", 
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
     "ipython>=8.31.0", # IPython: Productive Interactive Computing
+    "plotext>=5.3.2", # plotext plots directly on terminal
     "ipdb>=0.13.13", # IPython-enabled pdb
     "tqdm>=4.67.1", # Fast, Extensible Progress Meter
 ]
