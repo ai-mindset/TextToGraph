@@ -9,14 +9,13 @@ import pickle
 from collections.abc import Callable
 from typing import Any
 
+import ipdb
 from dotenv import load_dotenv
-from ollama import Client
 
-from ppcs.constants import DOCUMENTS, DOCUMENTS_TO_ADD_TO_INDEX
-from ppcs.document_processor import DocumentProcessor
+from ppcs import document_processor as doc_processor
+from ppcs.constants import DOCUMENTS, DOCUMENTS_TO_ADD_TO_INDEX, constants
 from ppcs.graph_database import GraphDatabaseConnection
 from ppcs.graph_manager import GraphManager
-from ppcs.logger import Logger
 from ppcs.query_handler import QueryHandler
 
 # %% [markdown]
@@ -31,13 +30,13 @@ if not DB_PATH:
 
 # ## [markdown]
 # ## Initialise
+logger = constants.LOGGER
+client = constants.CLIENT
 
-# Client initialization
-client = Client(host="http://localhost:11434")
-MODEL = "phi4:latest"
+ipdb.set_trace()
 
 # Initialize document processor
-doc_processor = DocumentProcessor(client, MODEL)
+doc_processor = DocumentProcessor(client, MODEL, logger)
 
 # Initialize database connection
 db_connection = GraphDatabaseConnection(db_path=DB_PATH)
@@ -47,9 +46,6 @@ graph_manager = GraphManager(db_connection)
 
 # Initialize query handler
 query_handler = QueryHandler(graph_manager, client, MODEL)
-
-# Initialize logger
-logger = Logger("PPCs Logger").get_logger()
 
 # %% [markdown]
 # ##Functions related to document processing
@@ -108,7 +104,7 @@ def initial_indexing(documents: list[str], graph_manager: GraphManager) -> None:
     Returns:
         None
     """
-    chunks = doc_processor.split_documents(documents)
+    chunks = doc_processor.split_documents(documents=documents)
     elements_file = "data/initial_elements_data.pkl"
     summaries_file = "data/initial_summaries_data.pkl"
 

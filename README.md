@@ -1,4 +1,4 @@
-# intelligeNPCs
+# PPCs (Partially Playable Characters) 
 
 0. Install prerequisite:
 ```console
