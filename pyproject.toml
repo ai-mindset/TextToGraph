@@ -17,9 +17,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pynvim>=0.5.2", # Python client for Neovim
     "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
     "ipython>=8.31.0", # IPython: Productive Interactive Computing
     "plotext>=5.3.2", # plotext plots directly on terminal
+    "matplotlib>=3.10.0", # Python plotting package
     "ipdb>=0.13.13", # IPython-enabled pdb
     "tqdm>=4.67.1", # Fast, Extensible Progress Meter
 ]
@@ -32,16 +34,10 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.ruff]
-lint.select = ["E", "F", "I", "N", "UP", "ANN", "B", "A", "C4"]
-        # `E`: Pylint error messages
-        # `F`: Pyflakes
+lint.select = ["I", "N", "UP"]
         # `I`: isort
         # `N`: pep8-naming
         # `UP`: pyupgrade
-        # `ANN`: flake8-annotations
-        # `B`: flake8-bugbear
-        # `A`: flake8-builtins
-        # `C4`: flake8-comprehensions
 line-length = 90
 target-version = "py313"
 

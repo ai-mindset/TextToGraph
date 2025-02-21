@@ -1,78 +1,44 @@
-"""The module provides functions to list and read text documents from a specified
-directory."""
+"""This module defines a set of constants for use in a text processing application,
+including configuration options for logging, chunking, and client settings."""
 
-import os
+from logging import Logger
 
-EXAMPLE_TEXT_DIRECTORY = "example_text"
+from ollama import Client
+from pydantic import BaseModel as PydanticBaseModel
 
+from ppcs.logger import setup_logger
 
-# %%
-def get_files_in_documents_directory(
-    documents_dir: str = EXAMPLE_TEXT_DIRECTORY,
-) -> list[str]:
-    """Returns a list of file names in the specified documents directory.
-
-    If the directory does not exist or is not a directory, returns an empty list.
-
-    Args:
-        documents_dir (str): The path to the documents directory.
-        Defaults to EXAMPLE_TEXT_DIRECTORY.
-
-    Returns:
-        list[str]: A list of file names in the documents directory.
-
-    Examples:
-        >>> get_files_in_documents_directory('example_text/')
-        ['doc_4.txt', 'doc_1.txt', 'test_doc.txt']
-        >>> get_files_in_documents_directory('/nonexistent/directory')
-        []
-    """
-    # Check if the `documents_dir` directory exists
-    if os.path.exists(documents_dir) and os.path.isdir(documents_dir):
-        # List all files in the 'documents' directory
-        files = [
-            f
-            for f in os.listdir(documents_dir)
-            if os.path.isfile(os.path.join(documents_dir, f))
-        ]
-        return files
-    else:
-        return []
+# %% [markdown]
+# ## Constants
 
 
 # %%
-def read_documents_from_files(
-    filenames: list[str], directory: str = EXAMPLE_TEXT_DIRECTORY
-) -> list[str]:
-    """Read documents from specified files in a directory and return their contents as a
-    list of strings.
-
-    Args:
-        filenames (list[str]): A list of filenames to read.
-        directory (str, optional): The directory where the files are located.
-        Defaults to EXAMPLE_TEXT_DIRECTORY.
-
-    Returns:
-        list[str]: A list containing the contents of each file.
-
-    Examples:
-    >>> read_documents_from_files(['test_doc.txt'], 'example_text/')
-    ['The sun is shining brightly today.\\n']
-    """
-    documents = []
-    for filename in filenames:
-        file_path = os.path.join(directory, filename)
-        with open(file_path, encoding="utf-8") as file:
-            documents.append(file.read())
-
-    return documents
+class BaseModel(PydanticBaseModel):
+    class Config:
+        arbitrary_types_allowed = True
 
 
 # %%
-# Read documents and store them in the DOCUMENTS list
-files_list: list[str] = get_files_in_documents_directory()
-if not files_list:
-    raise FileNotFoundError(f"{EXAMPLE_TEXT_DIRECTORY} is empty!")
+class Constants(BaseModel):
+    CHUNK_SIZE: int = 1000
+    CHUNK_OVERLAP: int = int(0.2 * CHUNK_SIZE)
+    EXAMPLE_TEXT_DIRECTORY: str = "example_text"
+    SEPARATORS: list[str] = ["\n\n", "\n", ".", " ", ""]
+    MODEL: str = "phi4:latest"
+    CLIENT: Client = Client(host="http://localhost:11434")
+    LOG_LEVEL: str = "INFO"
+    LOGGER: Logger = setup_logger(LOG_LEVEL)
 
-DOCUMENTS = read_documents_from_files(files_list[:-1])
-DOCUMENTS_TO_ADD_TO_INDEX = read_documents_from_files([files_list[-1]])
+
+# %%
+# Constants instance
+constants = Constants(
+    CHUNK_SIZE=1000,
+    CHUNK_OVERLAP=200,
+    EXAMPLE_TEXT_DIRECTORY="example_text",
+    SEPARATORS=["\n\n", "\n", ".", " ", ""],
+    MODEL="phi4:latest",
+    CLIENT=Client(host="http://localhost:11434"),
+    LOG_LEVEL="INFO",
+    LOGGER=setup_logger(),
+)

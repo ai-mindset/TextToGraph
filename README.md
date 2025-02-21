@@ -9,4 +9,4 @@ sudo dnf install libsqlite3x-devel
 $ sudo apt install libsqlite3-dev 
 ```
 
-Credit to https://github.com/stephenc222/example-graphrag-with-sqlite, as I'm borrowing heavily from their work. Thank you
+https://www.richard-towers.com/2025/02/16/representing-graphs-in-postgres.html
