@@ -3,7 +3,7 @@
 0. Install prerequisite:
 ```console
 # Fedora
-sudo dnf install libsqlite3x-devel
+$ sudo dnf install libsqlite3x-devel
 # or
 # Debian
 $ sudo apt install libsqlite3-dev 
