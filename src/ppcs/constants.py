@@ -23,9 +23,21 @@ class Constants(BaseModel):
     def CHUNK_OVERLAP(self) -> int:  # noqa: N802
         return int(0.2 * self.CHUNK_SIZE)
 
+    PLOT_DIRECTORY: str = Field(default="plots")
+
+    @computed_field
+    @property
+    def DEFAULT_PLOT(self) -> str:  # noqa: N802
+        return PLOT_DIRECTORY + "/character_graph.html"
+
     TEXT_DIRECTORY: str = Field(default="text")
     DB_DIRECTORY: str = Field(default="data")
-    DEFAULT_DB: str = Field(default="data/world.db")
+
+    @computed_field
+    @property
+    def DEFAULT_DB(self) -> str:  # noqa: N802
+        return DB_DIRECTORY + "/world.db"
+
     SEPARATORS: list[str] = Field(default=["\n\n", "\n", ".", " ", ""])
     MODEL: str = Field(default="mistral-small:24b-instruct-2501-q4_K_M")
     CLIENT: Client = Field(default=Client(host="http://localhost:11434"))

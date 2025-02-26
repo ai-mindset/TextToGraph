@@ -40,6 +40,7 @@ lint.select = ["I", "N", "UP"]
         # `I`: isort
         # `N`: pep8-naming
         # `UP`: pyupgrade
+ignore = ["N803"]
 line-length = 90
 target-version = "py313"
 

@@ -578,7 +578,9 @@ def main(
         logger.error(f"Text directory not found: {text_dir}")
         return
 
-    character_files = list(text_path.glob("*.txt"))
+    # character_files = list(text_path.glob("*.md"))
+
+    character_files = list(text_path.glob("*.md")) + list(text_path.glob("*.txt"))
     logger.info(f"Found {len(character_files)} character files")
 
     all_characters: list[Character] = []
