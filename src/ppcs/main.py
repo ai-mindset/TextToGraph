@@ -25,15 +25,7 @@ from ppcs.logger import setup_logger
 
 # %%
 # Constants instance
-constants = Constants(
-    CHUNK_SIZE=1000,
-    CHUNK_OVERLAP=200,
-    TEXT_DIRECTORY="text",
-    SEPARATORS=["\n\n", "\n", ".", " ", ""],
-    MODEL="phi4:latest",
-    CLIENT=Client(host="http://localhost:11434"),
-    LOG_LEVEL="INFO",
-)
+constants = Constants()
 
 logger: Logger = setup_logger(constants.LOG_LEVEL)
 
@@ -67,7 +59,9 @@ def get_db_connection(db_path: str) -> Generator:
         SQLite connection object
 
     Examples:
-        >>> db_path = "data/graph_database.db"
+        >>> from ppcs.constants import Constants
+        >>> constants =
+        >>> db_path = "data/world.db"
         >>> with get_db_connection(db_path=db_path) as conn:
         ...     isinstance(conn, sqlite3.Connection)
         True
@@ -161,7 +155,7 @@ def split_text(
 
 
 # %% ✅
-def embed_text_batch(texts: list[str]) -> list[list[float]]:
+def embed_text_chunks(texts: list[str]) -> list[list[float]]:
     """Embed multiple texts using Ollama's nomic-embed-text model.
 
     Args:
@@ -423,7 +417,7 @@ def save_document(
         ValueError: If the number of `chunks` does not match the number of `embeddings`.
 
     Examples:
-        >>> db_path = "data/graph_database.db"
+        >>> db_path = "data/world.db"
         >>> init_database(db_path=db_path)
         >>> save_document(db_path=db_path, doc_id="doc123", content="This is a document.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
         >>> save_document(db_path=db_path, doc_id="", content="This should raise an error.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
@@ -482,7 +476,7 @@ def save_graph_data(
         >>> char1 = Character(id="C001", properties={"name": "John", "age": 30})
         >>> char2 = Character(id="C002", properties={"name": "Jane", "age": 25})
         >>> rel = Relationship(source="C001", target="C002", relationship="friend", weight=0.8)
-        >>> db_path = "data/graph_database.db"
+        >>> db_path = "data/world.db"
         >>> save_graph_data(db_path=db_path, characters=[char1, char2], relationships=[rel])
 
     """
@@ -507,7 +501,7 @@ def save_graph_data(
             )
 
 
-# %%
+# %% ✅
 def get_document(db_path: str, doc_id: str):
     """
     Retrieve document from database.
@@ -520,7 +514,7 @@ def get_document(db_path: str, doc_id: str):
         dict or None: A dictionary containing the document details if found, otherwise None.
 
     Examples:
-        >>> db_path = "data/graph_database.db"
+        >>> db_path = "data/world.db"
         >>> init_database(db_path)
         >>> save_document(db_path=db_path, doc_id="doc123", content="This is a document.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
         >>> get_document(db_path=db_path, doc_id="doc123")
@@ -554,200 +548,118 @@ def get_document(db_path: str, doc_id: str):
 
 
 # %%
-if __name__ == "__main__":
-    import os
-    import tempfile
-    import time
-    from pathlib import Path
+def main(
+    db_path: str = constants.DEFAULT_DB, text_dir: str = constants.TEXT_DIRECTORY
+) -> None:
+    """
+    Process all character documents and build a knowledge graph.
 
-    import numpy as np
+    Executes the full pipeline:
+    1. Initialize database
+    2. Read character documents from directory
+    3. Process each document (split, embed)
+    4. Extract relationships
+    5. Save all data to the database
 
-    # Use the logger and constants already defined in the module scope
-    logger.info("Starting test of all functions")
+    Args:
+        db_path: Path to SQLite database file
+        text_dir: Directory containing character text files
 
-    # Initialize variables accessible across all tests
-    content = ""
-    chunks = []
-    embeddings_array = None
+    Returns:
+        None
 
-    # Create temporary database and test files
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_db_path = os.path.join(temp_dir, "test_world.db")
-        temp_file_path = os.path.join(temp_dir, "test_character.txt")
+    """
+    logger.info(f"Initializing database at {db_path}")
+    init_database(db_path)
 
-        # Create a test file
-        test_content = """
-        Alice is a brave and resourceful explorer who has been mapping the uncharted regions 
-        of the forest for years. She has a deep bond with Bob, her loyal companion and wilderness 
-        guide who relies on her leadership. Their friendship has grown stronger through many 
-        adventures. Charlie is Alice's younger brother who admires her greatly but sometimes 
-        feels overshadowed. He has a friendly rivalry with Bob over Alice's attention.
-        """
+    # Get all text files from directory
+    text_path = Path(text_dir)
+    if not text_path.exists() or not text_path.is_dir():
+        logger.error(f"Text directory not found: {text_dir}")
+        return
 
-        with open(temp_file_path, "w") as f:
-            f.write(test_content)
+    character_files = list(text_path.glob("*.txt"))
+    logger.info(f"Found {len(character_files)} character files")
 
-        test_file = Path(temp_file_path)
+    all_characters: list[Character] = []
+    all_relationships: list[Relationship] = []
 
-        # Test functions one by one
-        success_count = 0
-        total_tests = 7  # Update this when adding tests
+    # Process each character file
+    for file_path in character_files:
+        char_id = file_path.stem  # Use filename without extension as character ID
+        logger.info(f"Processing character: {char_id}")
 
-        # 1. Test database initialization
-        start_time = time.time()
         try:
-            logger.info("Testing init_database()")
-            init_database(temp_db_path)
-            # Verify tables exist
-            with get_db_connection(temp_db_path) as conn:
-                cursor = conn.cursor()
-                tables = cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-                table_names = [t[0] for t in tables]
-                assert set(table_names) >= {"documents", "nodes", "edges"}
-                logger.info("✅ Database initialization successful")
-                success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Database initialization failed: {e}")
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #1 completed in {elapsed:.3f} seconds")
+            # Read document
+            content = read_file(file_path)
 
-        # 2. Test file reading
-        start_time = time.time()
-        try:
-            logger.info("Testing read_file()")
-            content = read_file(test_file)
-            assert isinstance(content, str) and len(content) > 0
-            logger.info("✅ File reading successful")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ File reading failed: {e}")
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #2 completed in {elapsed:.3f} seconds")
-
-        # 3. Test text splitting
-        start_time = time.time()
-        try:
-            logger.info("Testing split_text()")
-            chunks = split_text(content)
-            assert isinstance(chunks, list) and len(chunks) > 0
-            logger.info(f"✅ Text splitting successful: {len(chunks)} chunks created")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Text splitting failed: {e}")
-            chunks = [content]  # Fallback for next test
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #3 completed in {elapsed:.3f} seconds")
-
-        # 4. Test embedding
-        start_time = time.time()
-        try:
-            logger.info("Testing embed_text_batch()")
-            embeddings = embed_text_batch(chunks)
-            assert len(embeddings) == len(chunks)
-            embeddings_array = np.array(embeddings, dtype=np.float32)
-            logger.info(
-                f"✅ Text embedding successful: {embeddings_array.shape} embedding shape"
-            )
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Text embedding failed: {e}")
-            # Create dummy embeddings for next test
-            embeddings_array = np.random.rand(len(chunks), 10).astype(np.float32)
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #4 completed in {elapsed:.3f} seconds")
-
-        # 5. Test document saving
-        start_time = time.time()
-        try:
-            logger.info("Testing save_document()")
-            save_document(
-                temp_db_path,
-                "test_doc",
+            # Split into chunks
+            chunks = split_text(
                 content,
-                chunks,
-                embeddings_array,
+                chunk_size=constants.CHUNK_SIZE,
+                overlap=constants.CHUNK_OVERLAP,
+                separators=constants.SEPARATORS,
             )
-            logger.info("✅ Document saving successful")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Document saving failed: {e}")
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #5 completed in {elapsed:.3f} seconds")
 
-        # 6. Test document retrieval
-        start_time = time.time()
-        try:
-            logger.info("Testing get_document()")
-            retrieved_doc = get_document(temp_db_path, "test_doc")
-            assert retrieved_doc is not None
-            assert retrieved_doc["id"] == "test_doc"
-            assert retrieved_doc["content"] == content
-            logger.info("✅ Document retrieval successful")
-            success_count += 1
-        except Exception as e:
-            logger.error(f"❌ Document retrieval failed: {e}")
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #6 completed in {elapsed:.3f} seconds")
+            if not chunks:
+                logger.warning(f"No chunks generated for {char_id}, skipping")
+                continue
 
-        # 7. Test relationship extraction and graph data saving
-        start_time = time.time()
-        try:
-            logger.info("Testing extract_relationships() and save_graph_data()")
-            # This test may take longer due to LLM processing
-            relationship_data = extract_relationships(content)
+            # Generate embeddings
+            logger.info(f"Generating embeddings for {len(chunks)} chunks")
+            embeddings = np.array(embed_text_chunks(chunks), dtype=np.float32)
 
-            # Collect all characters and relationships
-            all_characters = []
-            all_relationships = []
+            # Save document with chunks and embeddings
+            logger.info(f"Saving document data for {char_id}")
+            save_document(db_path, char_id, content, chunks, embeddings)
 
-            for _, parsed_items in relationship_data.items():
-                if isinstance(parsed_items, list) and len(parsed_items) >= 3:
-                    char1_data = parsed_items[0]
-                    char2_data = parsed_items[1]
-                    rel_data = parsed_items[2]
+            # Extract relationships
+            logger.info(f"Extracting relationships from {char_id}")
+            parsed_results = extract_relationships(content)
 
-                    # Create characters and relationship objects
+            # Process extracted relationships
+            for line_results in parsed_results.values():
+                if len(line_results) == 3:  # Valid relationship entry
+                    char1_data, char2_data, rel_data = line_results
+
                     char1 = Character(**char1_data)
                     char2 = Character(**char2_data)
-                    relationship = Relationship(**rel_data)
+                    rel = Relationship(**rel_data)
 
+                    # Add characters and relationship to collections
                     all_characters.extend([char1, char2])
-                    all_relationships.append(relationship)
+                    all_relationships.append(rel)
 
-            # Save graph data
-            save_graph_data(temp_db_path, all_characters, all_relationships)
-
-            # Verify data was saved
-            with get_db_connection(temp_db_path) as conn:
-                # Check nodes
-                node_count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-
-                # Check edges
-                edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
-
-                logger.info(f"Graph data: {node_count} nodes, {edge_count} edges")
-                assert node_count > 0 or edge_count > 0  # At least some data was saved
-
-                logger.info("✅ Relationship extraction and graph saving successful")
-                success_count += 1
         except Exception as e:
-            logger.error(f"❌ Relationship extraction or graph saving failed: {e}")
-        finally:
-            elapsed = time.time() - start_time
-            logger.info(f"Test #7 completed in {elapsed:.3f} seconds")
+            logger.error(f"Error processing {char_id}: {e}")
 
-        # Final results
-        logger.info(f"Test results: {success_count}/{total_tests} tests passed")
+    # Save all graph data
+    if all_characters and all_relationships:
+        logger.info(
+            f"Saving graph data: {len(all_characters)} characters, {len(all_relationships)} relationships"
+        )
+        save_graph_data(db_path, all_characters, all_relationships)
+    else:
+        logger.warning("No relationships or characters extracted")
 
-        if success_count == total_tests:
-            logger.info("🎉 All tests passed successfully!")
-        else:
-            logger.warning(f"⚠️ {total_tests - success_count} tests failed")
+    logger.info("Processing complete")
+
+
+# %%
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Process character documents and build knowledge graph"
+    )
+    parser.add_argument(
+        "--db", default=constants.DEFAULT_DB, help="Path to SQLite database"
+    )
+    parser.add_argument(
+        "--texts",
+        default=constants.TEXT_DIRECTORY,
+        help="Directory containing character text files",
+    )
+
+    args = parser.parse_args()
+    main(args.db, args.texts)

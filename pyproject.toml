@@ -11,7 +11,6 @@ dependencies = [
     "pydantic>=2.10.6", # Data validation using Python type hints
     "python-dotenv>=1.0.1", # Read key-value pairs from a .env file and set them as env vars
     "numpy>=2.2.3", # Fundamental package for array computing in Python
-    # "ollama>=0.4.7", # The official Python client for Ollama.
     "langchain-text-splitters>=0.3.6", # LangChain text splitting utilities
     "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain
     "plotly>=6.0.0", # An open-source, interactive data visualization library for Python
@@ -21,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pynvim>=0.5.2", # Python client for Neovim
+    "jedi-language-server>=0.43.1", # A language server for Jedi!
     "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
     "ipython>=8.31.0", # IPython: Productive Interactive Computing
     "plotext>=5.3.2", # plotext plots directly on terminal

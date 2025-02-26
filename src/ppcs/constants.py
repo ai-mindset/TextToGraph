@@ -3,6 +3,7 @@ including configuration options for logging, chunking, and client settings."""
 
 from ollama import Client
 from pydantic import BaseModel as PydanticBaseModel
+from pydantic import Field, computed_field
 
 # %% [markdown]
 # ## Constants
@@ -14,12 +15,18 @@ class BaseModel(PydanticBaseModel):
         arbitrary_types_allowed = True
 
 
-# %%
 class Constants(BaseModel):
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = int(0.2 * CHUNK_SIZE)
-    TEXT_DIRECTORY: str = "text"
-    SEPARATORS: list[str] = ["\n\n", "\n", ".", " ", ""]
-    MODEL: str = "phi4:latest"
-    CLIENT: Client = Client(host="http://localhost:11434")
-    LOG_LEVEL: str = "INFO"
+    CHUNK_SIZE: int = Field(default=1000)
+
+    @computed_field
+    @property
+    def CHUNK_OVERLAP(self) -> int:  # noqa: N802
+        return int(0.2 * self.CHUNK_SIZE)
+
+    TEXT_DIRECTORY: str = Field(default="text")
+    DB_DIRECTORY: str = Field(default="data")
+    DEFAULT_DB: str = Field(default="data/world.db")
+    SEPARATORS: list[str] = Field(default=["\n\n", "\n", ".", " ", ""])
+    MODEL: str = Field(default="mistral-small:24b-instruct-2501-q4_K_M")
+    CLIENT: Client = Field(default=Client(host="http://localhost:11434"))
+    LOG_LEVEL: str = Field(default="INFO")
