@@ -28,7 +28,7 @@ class Constants(BaseModel):
     @computed_field
     @property
     def DEFAULT_PLOT(self) -> str:  # noqa: N802
-        return PLOT_DIRECTORY + "/character_graph.html"
+        return self.PLOT_DIRECTORY + "/character_graph.html"
 
     TEXT_DIRECTORY: str = Field(default="text")
     DB_DIRECTORY: str = Field(default="data")
@@ -36,7 +36,7 @@ class Constants(BaseModel):
     @computed_field
     @property
     def DEFAULT_DB(self) -> str:  # noqa: N802
-        return DB_DIRECTORY + "/world.db"
+        return self.DB_DIRECTORY + "/world.db"
 
     SEPARATORS: list[str] = Field(default=["\n\n", "\n", ".", " ", ""])
     MODEL: str = Field(default="mistral-small:24b-instruct-2501-q4_K_M")

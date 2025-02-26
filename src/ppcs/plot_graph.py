@@ -145,17 +145,24 @@ def _calculate_layout(G: nx.DiGraph, algorithm: str) -> dict[str, tuple[float, f
     # Set random seed for reproducibility
     seed = 42
 
+    # Add some randomness to initial positions to avoid overlaps
+    initial_pos = {node: (np.random.random(), np.random.random()) for node in G.nodes()}
+
     if algorithm == "fruchterman_reingold":
-        return nx.fruchterman_reingold_layout(G, seed=seed)
+        return nx.fruchterman_reingold_layout(
+            G, k=0.3, iterations=100, seed=seed, pos=initial_pos
+        )
     elif algorithm == "kamada_kawai":
-        return nx.kamada_kawai_layout(G)
+        return nx.kamada_kawai_layout(G, pos=initial_pos)
     elif algorithm == "spring":
-        return nx.spring_layout(G, seed=seed)
+        return nx.spring_layout(G, k=0.5, iterations=100, seed=seed, pos=initial_pos)
     else:
         logger.warning(
             f"Unknown layout algorithm '{algorithm}', using fruchterman_reingold"
         )
-        return nx.fruchterman_reingold_layout(G, seed=seed)
+        return nx.fruchterman_reingold_layout(
+            G, k=0.3, iterations=100, seed=seed, pos=initial_pos
+        )
 
 
 def _create_plotly_graph(
@@ -200,6 +207,11 @@ def _create_plotly_graph(
         relationship = edge_data.get("relationship", "unknown")
         weight = edge_data.get("weight", 0.5)
 
+        # Create hover text with more details
+        hover_text = (
+            f"<b>{source}</b> {relationship} <b>{target}</b><br>Strength: {weight:.2f}"
+        )
+
         # Get color for this relationship type
         color = color_map.get(relationship.lower(), default_color)
 
@@ -210,7 +222,7 @@ def _create_plotly_graph(
         if relationship not in relationship_edges:
             relationship_edges[relationship] = []
 
-        relationship_edges[relationship].append((x0, y0, x1, y1, line_width))
+        relationship_edges[relationship].append((x0, y0, x1, y1, line_width, hover_text))
 
     # Add one trace per relationship type (for legend)
     for relationship, edges in relationship_edges.items():
@@ -233,10 +245,7 @@ def _create_plotly_graph(
         )
 
         # Add all edges of this relationship type
-        for x0, y0, x1, y1, line_width in edges:
-            # Calculate the middle of the edge for the hover text
-            mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
-
+        for x0, y0, x1, y1, line_width, hover_text in edges:
             # Add edge line
             fig.add_trace(
                 go.Scatter(
@@ -245,7 +254,7 @@ def _create_plotly_graph(
                     mode="lines",
                     line=dict(color=color, width=line_width),
                     hoverinfo="text",
-                    hovertext=relationship,
+                    hovertext=hover_text,
                     legendgroup=relationship,
                     showlegend=False,
                 )
@@ -273,19 +282,21 @@ def _create_plotly_graph(
                 opacity=0.8,
             )
 
-    # Add nodes
+    # Add nodes with better styling
     node_trace = go.Scatter(
         x=x_pos,
         y=y_pos,
         mode="markers+text",
         marker=dict(
-            size=15,
-            color="#1A1A1A",
-            line=dict(width=1, color="#444"),
+            size=20,
+            color="#FFFFFF",  # White fill
+            line=dict(width=2, color="#444444"),  # Dark outline
             opacity=0.9,
+            symbol="circle",
         ),
         text=[node_id for node_id in G.nodes()],
         textposition="top center",
+        textfont=dict(size=14, color="#000000"),
         hoverinfo="text",
         hovertext=[_format_node_hover(G, node_id) for node_id in G.nodes()],
     )
@@ -311,8 +322,12 @@ def _create_plotly_graph(
                 y=-0.05,
             )
         ],
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        xaxis=dict(
+            showgrid=False, zeroline=False, showticklabels=False, range=[-1.2, 1.2]
+        ),
+        yaxis=dict(
+            showgrid=False, zeroline=False, showticklabels=False, range=[-1.2, 1.2]
+        ),
         plot_bgcolor="rgba(240,240,240,0.8)",
         height=height,
         width=width,
@@ -345,18 +360,30 @@ def _format_node_hover(G: nx.DiGraph, node_id: str) -> str:
     """
     node_data = G.nodes[node_id]
 
+    # Count incoming and outgoing relationships
+    in_edges = list(G.in_edges(node_id, data=True))
+    out_edges = list(G.out_edges(node_id, data=True))
+
+    in_count = len(in_edges)
+    out_count = len(out_edges)
+
+    hover_parts = [f"<b>{node_id}</b>"]
+
+    # Add traits if available
     try:
-        # Try to extract traits from properties
         if isinstance(node_data, dict) and "traits" in node_data:
             traits = node_data["traits"]
             if isinstance(traits, list) and traits:
                 trait_text = ", ".join(traits)
-                return f"<b>{node_id}</b><br>Traits: {trait_text}"
+                hover_parts.append(f"Traits: {trait_text}")
     except Exception:
         pass
 
-    # Default format
-    return f"<b>{node_id}</b>"
+    # Add relationship counts
+    hover_parts.append(f"Incoming relationships: {in_count}")
+    hover_parts.append(f"Outgoing relationships: {out_count}")
+
+    return "<br>".join(hover_parts)
 
 
 if __name__ == "__main__":
@@ -372,7 +399,7 @@ if __name__ == "__main__":
         help=f"Path to SQLite database (default: {default_db})",
     )
     parser.add_argument(
-        "--output", default=constants.DEFAULT_PLOT, help="Path to save HTML output"
+        "--output", default="character_graph.html", help="Path to save HTML output"
     )
     parser.add_argument(
         "--layout",
