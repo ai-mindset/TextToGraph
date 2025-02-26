@@ -283,7 +283,7 @@ def is_valid_relationship_line(line: str) -> bool:
 def extract_relationships(
     text: str,
 ) -> dict[int, list[dict]]:
-    """Extract relationships from a given text using Mistral.
+    """Extract relationships from a given text using an LLM.
 
     Args:
         text (str): The text to analyze for character relationships.
@@ -291,10 +291,19 @@ def extract_relationships(
     Returns:
         dict[int, list[dict]]: A dictionary where keys are line numbers and values are lists containing dictionaries of characters and their relationships. Each dictionary in the list contains 'character1', 'character2', and 'relationship' keys with corresponding values.
 
+    ⚠️ this test may fail due to the stochastic nature of LLMs
     Examples:
         >>> text = "Alice is Bob's sister. They are very close. John is Mary's best friend. They've known each other for 20 years"
-        >>> parsed_results = extract_relationships(text)
-        >>> parsed_results[1] == [{'id': 'alice', 'traits': ['caring, empathetic']}, {'id': 'bob', 'traits': ['reliable, kind']}, {'source': 'alice',  'target': 'bob',  'relationship': 'sibling',  'weight': 1.0}]
+        >>> results = extract_relationships(text)
+        >>> all(isinstance(item, dict) for item in results[1])
+        True
+        >>> any(r.get('source') == 'alice' and r.get('target') == 'bob' and r.get('relationship') == 'sibling' for r in results[1])
+        True
+        >>> alice_entry = next((item for item in results[1] if item.get('id') == 'alice'), None)
+        >>> isinstance(alice_entry, dict) and 'traits' in alice_entry
+        True
+        >>> bob_entry = next((item for item in results[1] if item.get('id') == 'bob'), None)
+        >>> isinstance(bob_entry, dict) and isinstance(bob_entry.get('traits'), list)
         True
 
     """
