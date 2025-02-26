@@ -10,9 +10,12 @@ requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.10.6", # Data validation using Python type hints
     "python-dotenv>=1.0.1", # Read key-value pairs from a .env file and set them as env vars
-    "ollama>=0.4.7", # The official Python client for Ollama.
+    "numpy>=2.2.3", # Fundamental package for array computing in Python
+    # "ollama>=0.4.7", # The official Python client for Ollama.
     "langchain-text-splitters>=0.3.6", # LangChain text splitting utilities
-    "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain ## TODO: May not be required
+    "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain
+    "plotly>=6.0.0", # An open-source, interactive data visualization library for Python
+    "networkx>=3.4.2", # Python package for creating and manipulating graphs and networks
 ]
 
 [project.optional-dependencies]
@@ -21,7 +24,6 @@ dev = [
     "ruff>=0.9.3", # An extremely fast Python linter and code formatter, written in Rust
     "ipython>=8.31.0", # IPython: Productive Interactive Computing
     "plotext>=5.3.2", # plotext plots directly on terminal
-    "matplotlib>=3.10.0", # Python plotting package
     "ipdb>=0.13.13", # IPython-enabled pdb
     "tqdm>=4.67.1", # Fast, Extensible Progress Meter
 ]

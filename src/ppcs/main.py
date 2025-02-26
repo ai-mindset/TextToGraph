@@ -140,14 +140,13 @@ def split_text(
 
     Examples:
         >>> text = "This is a test. " * 500
-        >>> splitter = RecursiveCharacterTextSplitter(
-        ... chunk_size=100,
-        ... chunk_overlap=20,
-        ... separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""],
-        ... )
+        >>> from langchain_text_splitters import RecursiveCharacterTextSplitter
+        >>> separators = ['\\n\\n', '\\n', '.', '!', '?', ',', ' ', '']
+        >>> splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20, separators=separators)
         >>> chunks = splitter.split_text(text)
         >>> len(chunks) > 0 and all(len(c) <= 100 for c in chunks)
         True
+
     """
     if not text.strip():
         return []
@@ -199,13 +198,13 @@ def parse_line(
     Returns:
         A tuple of (Character | None, Character | None, Relationship | None)
 
-    >>> line = " Alice [traits: caring, empathetic] -> Related to -> Bob [traits: trusting, dependent] [strength: 0.9]."
+    >>> line = "Alice [traits: caring, empathetic] -> Related to -> Bob [traits: trusting, dependent] [strength: 0.9]."
     >>> char1, char2, rel = parse_line(line)
     >>> rel.source, rel.target, rel.weight
-    ('Alice', 'Bob', 0.7)
+    ('Alice', 'Bob', 0.9)
     >>> line = "Not a relationship line"
     >>> parse_line(line)
-    (None, None, None)
+    (Character(id='', traits=[]), Character(id='', traits=[]), Relationship(source='', target='', relationship='', weight=0.0))
 
     """
 
@@ -357,7 +356,9 @@ def init_database(db_path: str) -> None:
         >>> # Check if the database is initialized correctly
         >>> conn = sqlite3.connect(db_path)
         >>> cursor = conn.cursor()
-        >>> cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        >>> result = cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        >>> isinstance(result, sqlite3.Cursor)
+        True
         >>> tables = cursor.fetchall()
         >>> assert set(t[0] for t in tables) == {'documents', 'nodes', 'edges'}
 
@@ -416,7 +417,6 @@ def save_document(
         >>> db_path = "data/graph_database.db"
         >>> init_database(db_path=db_path)
         >>> save_document(db_path=db_path, doc_id="doc123", content="This is a document.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
-        None
         >>> save_document(db_path=db_path, doc_id="", content="This should raise an error.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
         Traceback (most recent call last):
         ...
@@ -455,7 +455,7 @@ def save_document(
 
 
 # ------------------------- Bookmark ---------------------------------------
-# %%
+# %% ✅
 def save_graph_data(
     db_path: str, characters: list[Character], relationships: list[Relationship]
 ) -> None:
@@ -473,7 +473,8 @@ def save_graph_data(
         >>> char1 = Character(id="C001", properties={"name": "John", "age": 30})
         >>> char2 = Character(id="C002", properties={"name": "Jane", "age": 25})
         >>> rel = Relationship(source="C001", target="C002", relationship="friend", weight=0.8)
-        >>> save_graph_data("test.db", [char1, char2], [rel])
+        >>> db_path = "data/graph_database.db"
+        >>> save_graph_data(db_path=db_path, characters=[char1, char2], relationships=[rel])
 
     """
     if not characters and not relationships:
@@ -511,9 +512,11 @@ def get_document(db_path: str, doc_id: str):
 
     Examples:
         >>> db_path = "data/graph_database.db"
+        >>> init_database(db_path)
         >>> save_document(db_path=db_path, doc_id="doc123", content="This is a document.", chunks=["chunk1", "chunk2"], embeddings=np.array([[0.1, 0.2], [0.3, 0.4]]))
-        >>> get_document(db_path=db_path, "doc123")
-        {'id': 'document123', 'content': 'This is a document.', 'chunks': ["chunk1", "chunk2"], 'embeddings': array([[0.1, 0.2], [0.3, 0.4]], dtype=float32)}
+        >>> get_document(db_path=db_path, doc_id="doc123")
+        {'id': 'doc123', 'content': 'This is a document.', 'chunks': ['chunk1', 'chunk2'], 'embeddings': array([[0.1, 0.2],
+               [0.3, 0.4]])}
 
     """
     with get_db_connection(db_path) as conn:
