@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from ppcs.constants import Constants
 from ppcs.logger import setup_logger
 
-# Initialize constants
+# Initialise constants
 constants = Constants()
 logger = setup_logger(constants.LOG_LEVEL)
 
@@ -19,7 +19,7 @@ if not hasattr(constants, "DEFAULT_PLOT"):
     constants.DEFAULT_PLOT = os.path.join(constants.DB_DIRECTORY, "character_graph.html")
 
 
-def load_and_visualize_graph(
+def load_and_visualise_graph(
     db_path: str | None = None,
     output_path: str | None = None,
     layout_algo: str = "fruchterman_reingold",
@@ -29,7 +29,7 @@ def load_and_visualize_graph(
     width: int = 1200,
 ) -> go.Figure:
     """
-    Load relationship graph from database and create an interactive visualization.
+    Load relationship graph from database and create an interactive visualisation.
 
     Args:
         db_path: Path to the SQLite database (defaults to constants.DEFAULT_DB)
@@ -45,14 +45,14 @@ def load_and_visualize_graph(
 
     Examples:
         >>> # Basic usage with defaults
-        >>> fig = load_and_visualize_graph()
+        >>> fig = load_and_visualise_graph()
         >>> # Save output and filter by weight
-        >>> fig = load_and_visualize_graph(min_weight=0.3)
+        >>> fig = load_and_visualise_graph(min_weight=0.3)
         >>> # Custom colors for relationship types
         >>> colors = {"friend": "green", "enemy": "red", "family": "blue"}
-        >>> fig = load_and_visualize_graph(color_map=colors)
+        >>> fig = load_and_visualise_graph(color_map=colors)
     """
-    # Default color mapping if none provided - using a colorblind-friendly palette
+    # Default colour mapping if none provided - using a colour-blind-friendly palette
     if color_map is None:
         color_map = {
             "friend": "#0072B2",  # Blue
@@ -143,12 +143,12 @@ def load_and_visualize_graph(
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
             fig.write_html(output_file)
-            logger.info(f"Graph visualization saved to {output_path}")
+            logger.info(f"Graph visualisation saved to {output_path}")
 
         return fig
 
     except Exception as e:
-        logger.error(f"Error visualizing graph: {e}")
+        logger.error(f"Error visualising graph: {e}")
         raise
 
 
@@ -346,7 +346,7 @@ def _create_plotly_graph(
 
     fig.add_trace(node_trace)
 
-    # Update layout for better visualization and accessibility
+    # Update layout for better visualisation and accessibility
     fig.update_layout(
         title=dict(
             text="Character Relationship Graph",
@@ -449,7 +449,7 @@ def _format_node_hover(G: nx.DiGraph, node_id: str) -> str:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Visualize character relationship graph")
+    parser = argparse.ArgumentParser(description="Visualise character relationship graph")
     parser.add_argument(
         "--db",
         default=constants.DEFAULT_DB,
@@ -481,8 +481,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Generate and save the visualization
-    load_and_visualize_graph(
+    # Generate and save the visualisation
+    load_and_visualise_graph(
         db_path=args.db,
         output_path=args.output,
         layout_algo=args.layout,
@@ -491,4 +491,4 @@ if __name__ == "__main__":
         width=args.width,
     )
 
-    print(f"Graph visualization saved to {args.output}")
+    print(f"Graph visualisation saved to {args.output}")
