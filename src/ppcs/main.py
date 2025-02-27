@@ -202,43 +202,56 @@ def parse_line(
 
     """
 
-    relationship_pattern: Pattern[str] = re.compile(
-        (
-            r"(\w+)"  # Character1 name (source)
-            r"\s*\[traits:\s*([^\]]+)\]?"  # Optional traits for source: matches "traits: x, y" inside brackets
-            r"\s*->\s*"  # First arrow with optional whitespace
-            r"([^->]+?)"  # Relationship description (non-greedy match)
-            r"\s*->\s*"  # Second arrow with optional whitespace
-            r"(\w+)"  # Character2 name (target)
-            r"\s*\[traits:\s*([^\]]+)\]?"  # Optional traits for target: matches "traits: x, y" inside brackets
-            r"\s*\[strength:\s*([\d.]+)\]"  # Strength value: matches decimal number inside [strength: X.X]
-        ),
-        re.VERBOSE,
+    # Handles multi-word names and varied formats
+    relationship_pattern = re.compile(
+        r"([A-Za-z\s]+)"  # Character1 name (allowing spaces)
+        r"(?:\s*\[traits:\s*([^\]]*)\])?"  # Optional traits for source (can be empty)
+        r"\s*->\s*"  # First arrow
+        r"([^->]+?)"  # Relationship description
+        r"\s*->\s*"  # Second arrow
+        r"([A-Za-z\s]+)"  # Character2 name (allowing spaces)
+        r"(?:\s*\[traits:\s*([^\]]*)\])?"  # Optional traits for target (can be empty)
+        r"\s*\[strength:\s*([\d.]+)\]"  # Strength value
     )
 
-    match = re.match(relationship_pattern, line)
+    match = relationship_pattern.search(line)
 
+    # Initialize empty objects
     char1 = Character()
     char2 = Character()
     rel = Relationship()
 
-    if not match:
-        return char1, char2, rel
+    if match:
+        source, source_traits_str, relationship, target, target_traits_str, strength = (
+            match.groups()
+        )
 
-    source, source_traits, relationship, target, target_traits, strength = match.groups()  # type: ignore[attr-defined]
+        # Clean up names and convert to title case
+        source = source.strip().title()
+        target = target.strip().title()
 
-    if source:
-        char1 = Character(id=source, traits=[source_traits])
+        # Parse traits (handling empty case)
+        source_traits = (
+            [t.strip() for t in source_traits_str.split(",")] if source_traits_str else []
+        )
+        target_traits = (
+            [t.strip() for t in target_traits_str.split(",")] if target_traits_str else []
+        )
 
-    if target:
-        char2 = Character(id=target, traits=[target_traits])
+        # Create valid objects only if names are present
+        if source:
+            char1 = Character(id=source, traits=source_traits)
 
-    rel = Relationship(
-        source=source,
-        target=target,
-        relationship=relationship,
-        weight=float(strength),
-    )
+        if target:
+            char2 = Character(id=target, traits=target_traits)
+
+        if source and target:
+            rel = Relationship(
+                source=source,
+                target=target,
+                relationship=relationship.strip(),
+                weight=float(strength),
+            )
 
     return char1, char2, rel
 
@@ -263,14 +276,12 @@ def is_valid_relationship_line(line: str) -> bool:
     # Normalize line for comparison
     normalised = line.lower().strip()
 
-    # Check structural elements that must be present
-    required_elements = [
-        "traits:",  # Must have traits section
-        "->",  # Must have relationship arrow
-        "strength:",  # Must have strength indicator
-    ]
+    # Check for arrows and strength indicator
+    has_arrows = "->" in normalised
+    has_strength = "strength:" in normalised
 
-    return all(element in normalised for element in required_elements)
+    # Allow missing or empty traits sections
+    return has_arrows and has_strength
 
 
 # %% ✅
@@ -578,8 +589,6 @@ def main(
         logger.error(f"Text directory not found: {text_dir}")
         return
 
-    # character_files = list(text_path.glob("*.md"))
-
     character_files = list(text_path.glob("*.md")) + list(text_path.glob("*.txt"))
     logger.info(f"Found {len(character_files)} character files")
 
@@ -621,16 +630,23 @@ def main(
 
             # Process extracted relationships
             for line_results in parsed_results.values():
-                if len(line_results) == 3:  # Valid relationship entry
+                if isinstance(line_results, list) and len(line_results) == 3:
                     char1_data, char2_data, rel_data = line_results
 
-                    char1 = Character(**char1_data)
-                    char2 = Character(**char2_data)
-                    rel = Relationship(**rel_data)
+                    # Only process relationships with valid source and target
+                    if (
+                        char1_data.get("id")
+                        and char2_data.get("id")
+                        and rel_data.get("source")
+                        and rel_data.get("target")
+                    ):
+                        char1 = Character(**char1_data)
+                        char2 = Character(**char2_data)
+                        rel = Relationship(**rel_data)
 
-                    # Add characters and relationship to collections
-                    all_characters.extend([char1, char2])
-                    all_relationships.append(rel)
+                        # Add characters and relationship to collections
+                        all_characters.extend([char1, char2])
+                        all_relationships.append(rel)
 
         except Exception as e:
             logger.error(f"Error processing {char_id}: {e}")
