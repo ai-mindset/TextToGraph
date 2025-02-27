@@ -14,6 +14,10 @@ from ppcs.logger import setup_logger
 constants = Constants()
 logger = setup_logger(constants.LOG_LEVEL)
 
+# Add DEFAULT_PLOT to Constants class if needed
+if not hasattr(constants, "DEFAULT_PLOT"):
+    constants.DEFAULT_PLOT = os.path.join(constants.DB_DIRECTORY, "character_graph.html")
+
 
 def load_and_visualize_graph(
     db_path: str | None = None,
@@ -28,8 +32,8 @@ def load_and_visualize_graph(
     Load relationship graph from database and create an interactive visualization.
 
     Args:
-        db_path: Path to the SQLite database
-        output_path: Path to save HTML output (optional)
+        db_path: Path to the SQLite database (defaults to constants.DEFAULT_DB)
+        output_path: Path to save HTML output (defaults to constants.DEFAULT_PLOT)
         layout_algo: Graph layout algorithm ('fruchterman_reingold', 'kamada_kawai', or 'spring')
         min_weight: Minimum relationship weight to include (0.0-1.0)
         color_map: Dictionary mapping relationship types to colors
@@ -40,34 +44,37 @@ def load_and_visualize_graph(
         Plotly figure object containing the interactive graph
 
     Examples:
-        >>> # Basic usage
-        >>> fig = load_and_visualize_graph("world.db")
+        >>> # Basic usage with defaults
+        >>> fig = load_and_visualize_graph()
         >>> # Save output and filter by weight
-        >>> fig = load_and_visualize_graph("world.db", "characters_graph.html", min_weight=0.3)
+        >>> fig = load_and_visualize_graph(min_weight=0.3)
         >>> # Custom colors for relationship types
         >>> colors = {"friend": "green", "enemy": "red", "family": "blue"}
-        >>> fig = load_and_visualize_graph("world.db", color_map=colors)
+        >>> fig = load_and_visualize_graph(color_map=colors)
     """
-    # Default color mapping if none provided
+    # Default color mapping if none provided - using a colorblind-friendly palette
     if color_map is None:
         color_map = {
-            "friend": "#4CAF50",  # Green
-            "enemy": "#F44336",  # Red
-            "family": "#2196F3",  # Blue
-            "colleague": "#FF9800",  # Orange
-            "spouse": "#E91E63",  # Pink
-            "sibling": "#9C27B0",  # Purple
-            "influences": "#00BCD4",  # Cyan
-            "depends on": "#795548",  # Brown
-            "related to": "#607D8B",  # Blue Grey
+            "friend": "#0072B2",  # Blue
+            "enemy": "#D55E00",  # Vermilion (orange-red)
+            "family": "#009E73",  # Green
+            "colleague": "#CC79A7",  # Pink
+            "spouse": "#56B4E9",  # Light blue
+            "sibling": "#E69F00",  # Orange
+            "influences": "#F0E442",  # Yellow
+            "depends on": "#882255",  # Purple
+            "related to": "#44AA99",  # Teal
         }
 
     # Default color for relationships not in the mapping
     default_color = "#9E9E9E"  # Grey
 
-    # Use default database path from constants if not provided
+    # Use default database path and output path from constants if not provided
     if db_path is None:
         db_path = constants.DEFAULT_DB
+
+    if output_path is None:
+        output_path = constants.DEFAULT_PLOT
 
     # Ensure the database directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -83,27 +90,43 @@ def load_and_visualize_graph(
 
         # Load nodes and edges from database
         with get_db_connection(db_path) as conn:
-            # Load nodes
-            cursor = conn.execute("SELECT id, properties FROM nodes")
+            # Load nodes (filtering out empty IDs)
+            cursor = conn.execute("SELECT id, properties FROM nodes WHERE id != ''")
             nodes = cursor.fetchall()
 
             for node_id, properties_json in nodes:
+                if not node_id:  # Skip nodes with empty IDs
+                    continue
                 properties = json.loads(properties_json)
                 G.add_node(node_id, **properties)
 
-            # Load edges with weight >= min_weight
+            # Load edges with weight > 0.0 (filter out zero-weight relationships and empty source/target)
             cursor = conn.execute(
-                "SELECT source, target, relationship, weight FROM edges WHERE weight >= ?",
-                (min_weight,),
+                """
+                SELECT source, target, relationship, weight 
+                FROM edges 
+                WHERE weight > ? AND weight >= ? 
+                AND source != '' AND target != ''
+                """,
+                (0.0, min_weight),
             )
             edges = cursor.fetchall()
 
+            # Add edge only if both source and target exist in the graph
             for source, target, relationship, weight in edges:
-                G.add_edge(source, target, relationship=relationship, weight=weight)
+                if source in G.nodes and target in G.nodes:
+                    G.add_edge(source, target, relationship=relationship, weight=weight)
 
+        # Check if graph has any nodes after filtering
         if not G.nodes:
-            logger.warning("No nodes found in the database")
-            return go.Figure()
+            logger.warning("No valid nodes found in the database after filtering")
+            fig = go.Figure()
+            fig.update_layout(
+                title="No Valid Nodes Found",
+                xaxis=dict(showticklabels=False),
+                yaxis=dict(showticklabels=False),
+            )
+            return fig
 
         if not G.edges:
             logger.warning(f"No relationships found with weight >= {min_weight}")
@@ -145,24 +168,39 @@ def _calculate_layout(G: nx.DiGraph, algorithm: str) -> dict[str, tuple[float, f
     # Set random seed for reproducibility
     seed = 42
 
-    # Add some randomness to initial positions to avoid overlaps
-    initial_pos = {node: (np.random.random(), np.random.random()) for node in G.nodes()}
+    # Get a fully connected version of the graph to improve layout
+    if not nx.is_connected(G.to_undirected()):
+        logger.info("Graph is not connected, adding weak connections for better layout")
+        G_layout = G.copy()
 
+        # Add weak connections between disconnected components to improve layout
+        components = list(nx.connected_components(G.to_undirected()))
+        if len(components) > 1:
+            for i in range(len(components) - 1):
+                src = next(iter(components[i]))
+                tgt = next(iter(components[i + 1]))
+                # Add a temporary edge with a very small weight
+                G_layout.add_edge(src, tgt, weight=0.001, temp=True)
+    else:
+        G_layout = G
+
+    # Calculate positions
     if algorithm == "fruchterman_reingold":
-        return nx.fruchterman_reingold_layout(
-            G, k=0.3, iterations=100, seed=seed, pos=initial_pos
-        )
+        # More iterations and higher k value spreads nodes better
+        pos = nx.fruchterman_reingold_layout(G_layout, k=1.0, iterations=300, seed=seed)
     elif algorithm == "kamada_kawai":
-        return nx.kamada_kawai_layout(G, pos=initial_pos)
+        # Improve distance scaling for better spread
+        pos = nx.kamada_kawai_layout(G_layout, scale=2.0)
     elif algorithm == "spring":
-        return nx.spring_layout(G, k=0.5, iterations=100, seed=seed, pos=initial_pos)
+        # Higher k value and more iterations for better spread
+        pos = nx.spring_layout(G_layout, k=1.5, iterations=200, seed=seed)
     else:
         logger.warning(
             f"Unknown layout algorithm '{algorithm}', using fruchterman_reingold"
         )
-        return nx.fruchterman_reingold_layout(
-            G, k=0.3, iterations=100, seed=seed, pos=initial_pos
-        )
+        pos = nx.fruchterman_reingold_layout(G_layout, k=1.0, iterations=300, seed=seed)
+
+    return pos
 
 
 def _create_plotly_graph(
@@ -215,8 +253,8 @@ def _create_plotly_graph(
         # Get color for this relationship type
         color = color_map.get(relationship.lower(), default_color)
 
-        # Scale line_width by weight (0.5 - 3.0)
-        line_width = 0.5 + 2.5 * weight
+        # Scale line_width by weight (1.0 - 5.0) - making weight differences more noticeable
+        line_width = 1.0 + 4.0 * weight
 
         # Add to relationship group
         if relationship not in relationship_edges:
@@ -228,16 +266,19 @@ def _create_plotly_graph(
     for relationship, edges in relationship_edges.items():
         color = color_map.get(relationship.lower(), default_color)
 
+        # Show both color and pattern in legend for accessibility
+        legend_name = f"{relationship} ({'—' * min(4, len(relationship))})"
+
         # Add representative edge for the legend
         fig.add_trace(
             go.Scatter(
                 x=[None],
                 y=[None],
                 mode="lines",
-                name=relationship,
+                name=legend_name,
                 line=dict(
                     color=color,
-                    width=2,
+                    width=3,
                 ),
                 hoverinfo="none",
                 legendgroup=relationship,
@@ -282,7 +323,7 @@ def _create_plotly_graph(
                 opacity=0.8,
             )
 
-    # Add nodes with better styling
+    # Add nodes with accessibility-friendly styling
     node_trace = go.Scatter(
         x=x_pos,
         y=y_pos,
@@ -290,28 +331,34 @@ def _create_plotly_graph(
         marker=dict(
             size=20,
             color="#FFFFFF",  # White fill
-            line=dict(width=2, color="#444444"),  # Dark outline
-            opacity=0.9,
+            line=dict(width=2, color="#000000"),  # Black outline for high contrast
+            opacity=1.0,  # Full opacity for better visibility
             symbol="circle",
         ),
         text=[node_id for node_id in G.nodes()],
         textposition="top center",
-        textfont=dict(size=14, color="#000000"),
+        textfont=dict(
+            size=16, color="#000000", family="Arial"
+        ),  # Larger, high-contrast text
         hoverinfo="text",
         hovertext=[_format_node_hover(G, node_id) for node_id in G.nodes()],
     )
 
     fig.add_trace(node_trace)
 
-    # Update layout for better visualization
+    # Update layout for better visualization and accessibility
     fig.update_layout(
         title=dict(
-            text="Character Relationship Graph", x=0.5, font=dict(family="Arial", size=16)
+            text="Character Relationship Graph",
+            x=0.5,
+            font=dict(
+                family="Arial", size=20, color="#000000"
+            ),  # Larger, high-contrast title
         ),
-        font=dict(family="Arial", size=12),
+        font=dict(family="Arial", size=14, color="#000000"),  # Larger, high-contrast font
         showlegend=True,
         hovermode="closest",
-        margin=dict(b=20, l=5, r=5, t=40),
+        margin=dict(b=30, l=20, r=20, t=50),  # Larger margins for better spacing
         annotations=[
             dict(
                 text="Hover over nodes and edges for details. Use toolbar to zoom, pan, or reset view.",
@@ -320,24 +367,37 @@ def _create_plotly_graph(
                 yref="paper",
                 x=0.01,
                 y=-0.05,
+                font=dict(size=14, color="#000000"),  # High-contrast instruction text
             )
         ],
         xaxis=dict(
-            showgrid=False, zeroline=False, showticklabels=False, range=[-1.2, 1.2]
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            range=[-1.5, 1.5],  # Wider range for better spread
         ),
         yaxis=dict(
-            showgrid=False, zeroline=False, showticklabels=False, range=[-1.2, 1.2]
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            range=[-1.5, 1.5],  # Wider range for better spread
         ),
-        plot_bgcolor="rgba(240,240,240,0.8)",
+        plot_bgcolor="#FFFFFF",  # White background for highest contrast
         height=height,
         width=width,
         legend=dict(
-            title="Relationship Types",
+            title=dict(
+                text="Relationship Types",
+                font=dict(size=16, color="#000000"),  # High-contrast legend title
+            ),
+            font=dict(size=14, color="#000000"),  # High-contrast legend items
             yanchor="top",
             y=1,
             xanchor="left",
             x=1.02,
             itemsizing="constant",
+            bordercolor="#000000",  # Black border for legend
+            borderwidth=1,
         ),
     )
 
@@ -389,17 +449,16 @@ def _format_node_hover(G: nx.DiGraph, node_id: str) -> str:
 if __name__ == "__main__":
     import argparse
 
-    # Get default database path from constants
-    default_db = constants.DEFAULT_DB
-
     parser = argparse.ArgumentParser(description="Visualize character relationship graph")
     parser.add_argument(
         "--db",
-        default=default_db,
-        help=f"Path to SQLite database (default: {default_db})",
+        default=constants.DEFAULT_DB,
+        help=f"Path to SQLite database (default: {constants.DEFAULT_DB})",
     )
     parser.add_argument(
-        "--output", default="character_graph.html", help="Path to save HTML output"
+        "--output",
+        default=constants.DEFAULT_PLOT,
+        help=f"Path to save HTML output (default: {constants.DEFAULT_PLOT})",
     )
     parser.add_argument(
         "--layout",
