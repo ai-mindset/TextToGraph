@@ -1,4 +1,7 @@
 .git
+data/*
+text/*
+plots/*
 
 # Python
 # Byte-compiled / optimized / DLL files
