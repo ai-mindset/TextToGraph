@@ -15,6 +15,7 @@ dependencies = [
     "langchain-ollama>=0.2.3", # An integration package connecting Ollama and LangChain
     "plotly>=6.0.0", # An open-source, interactive data visualization library for Python
     "networkx>=3.4.2", # Python package for creating and manipulating graphs and networks
+    "scipy>=1.15.2", # Fundamental algorithms for scientific computing in Python # NOTE: 'kamada_kawai' from NetworkX requires scipy   
 ]
 
 [project.optional-dependencies]
