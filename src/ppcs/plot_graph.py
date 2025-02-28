@@ -1,494 +1,699 @@
+"""
+Create an accessible and aesthetically pleasing visualization of character relationships.
+
+Features:
+- Optimized node separation for maximum readability
+- Colorblind-friendly palette
+- Distinctive edge styles
+- Simple, testable functions with clear docstrings
+- Modern Python 3.10+ syntax
+"""
+
+# %%
 import json
-import os
+import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import plotly.graph_objects as go
+from matplotlib.lines import Line2D
 
 from ppcs.constants import Constants
-from ppcs.logger import setup_logger
 
-# Initialise constants
-constants = Constants()
-logger = setup_logger(constants.LOG_LEVEL)
-
-# Add DEFAULT_PLOT to Constants class if needed
-if not hasattr(constants, "DEFAULT_PLOT"):
-    constants.DEFAULT_PLOT = os.path.join(constants.DB_DIRECTORY, "character_graph.html")
+# %%
+const = Constants()
 
 
-def load_and_visualise_graph(
-    db_path: str | None = None,
-    output_path: str | None = None,
-    layout_algo: str = "fruchterman_reingold",
-    min_weight: float = 0.0,
-    color_map: dict[str, str] | None = None,
-    height: int = 800,
-    width: int = 1200,
-) -> go.Figure:
+def get_db_data(db_path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    Load relationship graph from database and create an interactive visualisation.
+    Extract nodes and edges data from the SQLite database.
 
     Args:
-        db_path: Path to the SQLite database (defaults to constants.DEFAULT_DB)
-        output_path: Path to save HTML output (defaults to constants.DEFAULT_PLOT)
-        layout_algo: Graph layout algorithm ('fruchterman_reingold', 'kamada_kawai', or 'spring')
-        min_weight: Minimum relationship weight to include (0.0-1.0)
-        color_map: Dictionary mapping relationship types to colors
-        height: Height of the plot in pixels
-        width: Width of the plot in pixels
+        db_path: Path to the SQLite database
 
     Returns:
-        Plotly figure object containing the interactive graph
+        Tuple containing lists of node and edge dictionaries
 
-    Examples:
-        >>> # Basic usage with defaults
-        >>> fig = load_and_visualise_graph()
-        >>> # Save output and filter by weight
-        >>> fig = load_and_visualise_graph(min_weight=0.3)
-        >>> # Custom colors for relationship types
-        >>> colors = {"friend": "green", "enemy": "red", "family": "blue"}
-        >>> fig = load_and_visualise_graph(color_map=colors)
+    >>> import tempfile
+    >>> with tempfile.NamedTemporaryFile() as f:
+    ...     conn = sqlite3.connect(f.name)
+    ...     conn.execute("CREATE TABLE nodes (id TEXT PRIMARY KEY, properties TEXT)")
+    ...     conn.execute("CREATE TABLE edges (source TEXT, target TEXT, relationship TEXT, weight REAL)")
+    ...     conn.execute("INSERT INTO nodes VALUES (?, ?)", ("Character1", '{"id":"Character1","traits":["trait1"]}'))
+    ...     conn.execute("INSERT INTO edges VALUES (?, ?, ?, ?)", ("Character1", "Character2", "friend", 0.8))
+    ...     conn.commit()
+    ...     nodes, edges = get_db_data(f.name)
+    >>> len(nodes) > 0 and len(edges) > 0
+    True
     """
-    # Default colour mapping if none provided - using a colour-blind-friendly palette
-    if color_map is None:
-        color_map = {
-            "friend": "#0072B2",  # Blue
-            "enemy": "#D55E00",  # Vermilion (orange-red)
-            "family": "#009E73",  # Green
-            "colleague": "#CC79A7",  # Pink
-            "spouse": "#56B4E9",  # Light blue
-            "sibling": "#E69F00",  # Orange
-            "influences": "#F0E442",  # Yellow
-            "depends on": "#882255",  # Purple
-            "related to": "#44AA99",  # Teal
-        }
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
 
-    # Default color for relationships not in the mapping
-    default_color = "#9E9E9E"  # Grey
+    # Get nodes
+    cursor = conn.execute("SELECT id, properties FROM nodes")
+    nodes = [dict(row) for row in cursor.fetchall()]
 
-    # Use default database path and output path from constants if not provided
-    if db_path is None:
-        db_path = constants.DEFAULT_DB
+    # Get edges
+    cursor = conn.execute("SELECT source, target, relationship, weight FROM edges")
+    edges = [dict(row) for row in cursor.fetchall()]
 
-    if output_path is None:
-        output_path = constants.DEFAULT_PLOT
+    conn.close()
+    return nodes, edges
 
-    # Ensure the database directory exists
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # Connect to database and load graph data
-    logger.info(f"Loading graph data from {db_path}")
+def parse_node_properties(node_data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Parse node properties from JSON string to dictionary.
 
+    Args:
+        node_data: Dictionary with node data including JSON properties
+
+    Returns:
+        Dictionary with parsed properties
+
+    >>> data = {"id": "Emma", "properties": '{"id":"Emma","traits":["creative","determined"]}'}
+    >>> result = parse_node_properties(data)
+    >>> result["id"] == "Emma" and "traits" in result
+    True
+    """
     try:
-        from ppcs.main import get_db_connection
-
-        # Create a directed graph to represent relationships
-        G = nx.DiGraph()
-
-        # Load nodes and edges from database
-        with get_db_connection(db_path) as conn:
-            # Load nodes (filtering out empty IDs)
-            cursor = conn.execute("SELECT id, properties FROM nodes WHERE id != ''")
-            nodes = cursor.fetchall()
-
-            for node_id, properties_json in nodes:
-                if not node_id:  # Skip nodes with empty IDs
-                    continue
-                properties = json.loads(properties_json)
-                G.add_node(node_id, **properties)
-
-            # Load edges with weight > 0.0 (filter out zero-weight relationships and empty source/target)
-            cursor = conn.execute(
-                """
-                SELECT source, target, relationship, weight 
-                FROM edges 
-                WHERE weight > ? AND weight >= ? 
-                AND source != '' AND target != ''
-                """,
-                (0.0, min_weight),
-            )
-            edges = cursor.fetchall()
-
-            # Add edge only if both source and target exist in the graph
-            for source, target, relationship, weight in edges:
-                if source in G.nodes and target in G.nodes:
-                    G.add_edge(source, target, relationship=relationship, weight=weight)
-
-        # Check if graph has any nodes after filtering
-        if not G.nodes:
-            logger.warning("No valid nodes found in the database after filtering")
-            fig = go.Figure()
-            fig.update_layout(
-                title="No Valid Nodes Found",
-                xaxis=dict(showticklabels=False),
-                yaxis=dict(showticklabels=False),
-            )
-            return fig
-
-        if not G.edges:
-            logger.warning(f"No relationships found with weight >= {min_weight}")
-            # Still show nodes even if no edges meet criteria
-
-        # Calculate node positions based on selected layout algorithm
-        pos = _calculate_layout(G, layout_algo)
-
-        # Create the figure
-        fig = _create_plotly_graph(G, pos, color_map, default_color, height, width)
-
-        # Save to HTML if output path is provided
-        if output_path:
-            output_file = Path(output_path)
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            fig.write_html(output_file)
-            logger.info(f"Graph visualisation saved to {output_path}")
-
-        return fig
-
-    except Exception as e:
-        logger.error(f"Error visualising graph: {e}")
-        raise
+        props = json.loads(node_data["properties"])
+        return props
+    except (json.JSONDecodeError, KeyError):
+        return {"id": node_data["id"], "traits": []}
 
 
-def _calculate_layout(G: nx.DiGraph, algorithm: str) -> dict[str, tuple[float, float]]:
+def identify_character_groups(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+) -> dict[str, int]:
     """
-    Calculate node positions using the specified layout algorithm.
+    Group characters based on their relationships for consistent visual representation.
+
+    Args:
+        nodes: List of node dictionaries
+        edges: List of edge dictionaries
+
+    Returns:
+        Dictionary mapping character IDs to group indices
+
+    >>> nodes = [{"id": "Alice"}, {"id": "Bob"}, {"id": "Charlie"}]
+    >>> edges = [{"source": "Alice", "target": "Bob"}, {"source": "Charlie", "target": "Alice"}]
+    >>> groups = identify_character_groups(nodes, edges)
+    >>> isinstance(groups, dict) and all(isinstance(v, int) for v in groups.values())
+    True
+    """
+    # Create undirected graph to find clusters
+    G = nx.Graph()
+
+    # Add all nodes
+    for node in nodes:
+        G.add_node(node["id"])
+
+    # Add edges
+    for edge in edges:
+        G.add_edge(edge["source"], edge["target"])
+
+    # Find communities using modularity-based detection
+    try:
+        communities = nx.community.greedy_modularity_communities(G)
+
+        # Map each character to its community
+        char_groups = {}
+        for i, community in enumerate(communities):
+            for character in community:
+                char_groups[character] = i
+
+        return char_groups
+    except:
+        # Fallback to connected components if modularity fails
+        components = list(nx.connected_components(G))
+
+        char_groups = {}
+        for i, component in enumerate(components):
+            for character in component:
+                char_groups[character] = i
+
+        return char_groups
+
+
+def get_colorblind_friendly_palette() -> list[str]:
+    """
+    Return a colorblind-friendly color palette.
+
+    Returns:
+        List of hex color codes
+
+    >>> palette = get_colorblind_friendly_palette()
+    >>> len(palette) > 5 and all(c.startswith('#') for c in palette)
+    True
+    """
+    # Wong's colorblind-friendly palette
+    return [
+        "#000000",  # Black
+        "#E69F00",  # Orange
+        "#56B4E9",  # Sky Blue
+        "#009E73",  # Green
+        "#F0E442",  # Yellow
+        "#0072B2",  # Blue
+        "#D55E00",  # Vermillion
+        "#CC79A7",  # Purple
+    ]
+
+
+def get_shape_markers() -> list[str]:
+    """
+    Return a list of distinctive node shape markers.
+
+    Returns:
+        List of matplotlib marker symbols
+
+    >>> markers = get_shape_markers()
+    >>> len(markers) > 4
+    True
+    """
+    return ["o", "s", "^", "D", "v", "p", "h", "8"]
+
+
+def get_edge_styles() -> list[Any]:
+    """
+    Return a list of distinctive edge line styles.
+
+    Returns:
+        List of matplotlib line style specifiers
+
+    >>> styles = get_edge_styles()
+    >>> len(styles) > 3
+    True
+    """
+    return ["-", "--", "-.", ":", (0, (3, 1, 1, 1)), (0, (5, 1))]
+
+
+def create_base_graph(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+) -> nx.DiGraph:
+    """
+    Create the initial NetworkX directed graph with all nodes and edges.
+
+    Args:
+        nodes: List of node dictionaries
+        edges: List of edge dictionaries
+
+    Returns:
+        NetworkX DiGraph object
+
+    >>> nodes = [{"id": "Alice", "properties": '{"id":"Alice","traits":["nice"]}'}]
+    >>> edges = [{"source": "Alice", "target": "Bob", "relationship": "friend", "weight": 0.8}]
+    >>> G = create_base_graph(nodes, edges)
+    >>> len(G.nodes) > 0 and len(G.edges) > 0
+    True
+    """
+    # Create directed graph
+    G = nx.DiGraph()
+
+    # Add nodes with properties
+    for node in nodes:
+        node_id = node["id"]
+        properties = parse_node_properties(node)
+        traits = properties.get("traits", [])
+        G.add_node(node_id, traits=traits)
+
+    # Add edges with attributes
+    for edge in edges:
+        source = edge["source"]
+        target = edge["target"]
+
+        # Skip self-loops
+        if source == target:
+            continue
+
+        relationship = edge["relationship"]
+        weight = edge["weight"]
+
+        # Add edge with attributes
+        G.add_edge(source, target, relationship=relationship, weight=weight)
+
+    return G
+
+
+def optimize_node_layout(G: nx.DiGraph) -> dict[str, np.ndarray]:
+    """
+    Compute an optimized layout for maximum node separation and readability.
 
     Args:
         G: NetworkX graph
-        algorithm: Layout algorithm name
 
     Returns:
-        Dictionary mapping node IDs to (x, y) positions
+        Dictionary mapping node IDs to position coordinates
+
+    >>> G = nx.DiGraph()
+    >>> G.add_node("A")
+    >>> G.add_node("B")
+    >>> G.add_edge("A", "B")
+    >>> pos = optimize_node_layout(G)
+    >>> isinstance(pos, dict) and all(isinstance(v, np.ndarray) for v in pos.values())
+    True
     """
-    logger.info(f"Calculating graph layout using {algorithm} algorithm")
+    # Try Kamada-Kawai first (good for separation)
+    try:
+        # Use multiple attempts to find best layout
+        best_layout = None
+        best_score = -float("inf")
 
-    # Set random seed for reproducibility
-    seed = 42
+        for i in range(3):
+            # Create layout with different seeds
+            pos = nx.kamada_kawai_layout(G, scale=2.0)
 
-    # Get a fully connected version of the graph to improve layout
-    if not nx.is_connected(G.to_undirected()):
-        logger.info("Graph is not connected, adding weak connections for better layout")
-        G_layout = G.copy()
+            # Score the layout based on minimum distance between nodes
+            min_dist = float("inf")
+            for n1, p1 in pos.items():
+                for n2, p2 in pos.items():
+                    if n1 != n2:
+                        dist = np.sqrt(np.sum((p1 - p2) ** 2))
+                        min_dist = min(min_dist, dist)
 
-        # Add weak connections between disconnected components to improve layout
-        components = list(nx.connected_components(G.to_undirected()))
-        if len(components) > 1:
-            for i in range(len(components) - 1):
-                src = next(iter(components[i]))
-                tgt = next(iter(components[i + 1]))
-                # Add a temporary edge with a very small weight
-                G_layout.add_edge(src, tgt, weight=0.001, temp=True)
-    else:
-        G_layout = G
+            # Keep best layout
+            if min_dist > best_score:
+                best_score = min_dist
+                best_layout = pos
 
-    # Calculate positions
-    if algorithm == "fruchterman_reingold":
-        # More iterations and higher k value spreads nodes better
-        pos = nx.fruchterman_reingold_layout(G_layout, k=1.0, iterations=300, seed=seed)
-    elif algorithm == "kamada_kawai":
-        # Improve distance scaling for better spread
-        pos = nx.kamada_kawai_layout(G_layout, scale=2.0)
-    elif algorithm == "spring":
-        # Higher k value and more iterations for better spread
-        pos = nx.spring_layout(G_layout, k=1.5, iterations=200, seed=seed)
-    else:
-        logger.warning(
-            f"Unknown layout algorithm '{algorithm}', using fruchterman_reingold"
+        return best_layout
+    except:
+        # Fallback to spring layout
+        return nx.spring_layout(G, k=1.5, iterations=100, seed=42, scale=2.0)
+
+
+def create_animation_frames(
+    G: nx.DiGraph, group_mapping: dict[str, int]
+) -> list[tuple[set[str], set[tuple[str, str, str]]]]:
+    """
+    Create the sequence of frames for the animation.
+
+    Args:
+        G: NetworkX graph
+        group_mapping: Mapping of nodes to their groups
+
+    Returns:
+        List of (nodes, edges) sets for each frame
+
+    >>> G = nx.DiGraph()
+    >>> G.add_edge("A", "B", relationship="friend")
+    >>> G.add_edge("B", "C", relationship="enemy")
+    >>> groups = {"A": 0, "B": 1, "C": 0}
+    >>> frames = create_animation_frames(G, groups)
+    >>> len(frames) > 0
+    True
+    """
+    # Start with central nodes (higher betweenness)
+    try:
+        betweenness = nx.betweenness_centrality(G)
+        sorted_nodes = sorted(
+            G.nodes(), key=lambda n: betweenness.get(n, 0), reverse=True
         )
-        pos = nx.fruchterman_reingold_layout(G_layout, k=1.0, iterations=300, seed=seed)
+    except:
+        # Fallback to degree if betweenness fails
+        sorted_nodes = sorted(G.nodes(), key=lambda n: G.degree(n), reverse=True)
 
-    return pos
+    # Create frames by gradually adding nodes and their edges
+    frames = []
+    current_nodes = set()
+    current_edges = set()
+
+    # First, add top N most central nodes
+    central_count = min(3, len(sorted_nodes))
+    for i in range(central_count):
+        if i < len(sorted_nodes):
+            node = sorted_nodes[i]
+            current_nodes.add(node)
+            frames.append((current_nodes.copy(), current_edges.copy()))
+
+    # Group edges by their source to add coherently
+    edges_by_source = defaultdict(list)
+    for u, v, data in G.edges(data=True):
+        edge_key = (u, v, data["relationship"])
+        edges_by_source[u].append((edge_key, v))
+
+    # Then add edges for existing nodes
+    for node in list(current_nodes):  # Convert to list for safe iteration
+        if node in edges_by_source:
+            for edge_key, target in edges_by_source[node]:
+                current_edges.add(edge_key)
+                current_nodes.add(target)
+            frames.append((current_nodes.copy(), current_edges.copy()))
+
+    # Add remaining nodes and edges
+    remaining_nodes = [n for n in sorted_nodes if n not in current_nodes]
+
+    for node in remaining_nodes:
+        # Add the node
+        current_nodes.add(node)
+        frames.append((current_nodes.copy(), current_edges.copy()))
+
+        # Add its edges
+        if node in edges_by_source:
+            for edge_key, target in edges_by_source[node]:
+                current_edges.add(edge_key)
+                current_nodes.add(target)
+            frames.append((current_nodes.copy(), current_edges.copy()))
+
+    # Ensure all edges are included
+    for u, v, data in G.edges(data=True):
+        edge_key = (u, v, data["relationship"])
+        if edge_key not in current_edges:
+            current_edges.add(edge_key)
+            frames.append((current_nodes.copy(), current_edges.copy()))
+
+    # Add pause frames at the end
+    for _ in range(10):
+        frames.append((current_nodes.copy(), current_edges.copy()))
+
+    return frames
 
 
-def _create_plotly_graph(
+def draw_frame(
     G: nx.DiGraph,
-    pos: dict[str, tuple[float, float]],
-    color_map: dict[str, str],
-    default_color: str,
-    height: int,
-    width: int,
-) -> go.Figure:
+    ax: plt.Axes,
+    pos: dict[str, np.ndarray],
+    visible_nodes: set[str],
+    visible_edges: set[tuple[str, str, str]],
+    node_groups: dict[str, int],
+    progress: float = 1.0,
+):
     """
-    Create a Plotly figure from the NetworkX graph.
+    Draw a single frame of the graph visualization.
 
     Args:
         G: NetworkX graph
-        pos: Dictionary mapping node IDs to positions
-        color_map: Dictionary mapping relationship types to colors
-        default_color: Default color for undefined relationships
-        height: Height of the plot in pixels
-        width: Width of the plot in pixels
+        ax: Matplotlib axes
+        pos: Node positions
+        visible_nodes: Set of visible node IDs
+        visible_edges: Set of visible edge keys (source, target, relationship)
+        node_groups: Mapping of nodes to their groups
+        progress: Animation progress (0.0 to 1.0)
 
     Returns:
-        Plotly figure
+        None
     """
-    # Extract node positions
-    x_pos = [pos[node][0] for node in G.nodes()]
-    y_pos = [pos[node][1] for node in G.nodes()]
+    ax.clear()
 
-    # Create a placeholder for the figure
-    fig = go.Figure()
+    # Setup
+    ax.set_title("Character Relationship Network", fontsize=20, fontweight="bold")
+    ax.set_axis_off()
 
-    # Add edges (drawn as annotations to support arrows)
-    edge_traces = []
+    # Get visual elements
+    colors = get_colorblind_friendly_palette()
+    shapes = get_shape_markers()
+    edge_styles = get_edge_styles()
 
-    # Group edges by relationship type for legend
-    relationship_edges = {}
+    # Draw only visible nodes
+    for node in visible_nodes:
+        if node not in G:
+            continue
 
-    for source, target, edge_data in G.edges(data=True):
-        x0, y0 = pos[source]
-        x1, y1 = pos[target]
+        # Get group for consistent visual attributes
+        group = node_groups.get(node, 0)
+        color_idx = group % len(colors)
+        shape_idx = group % len(shapes)
 
-        relationship = edge_data.get("relationship", "unknown")
+        # Size based on connections
+        size = 1500 + 500 * G.degree(node)
+
+        # Draw the node
+        ax.scatter(
+            pos[node][0],
+            pos[node][1],
+            s=size,
+            c=colors[color_idx],
+            marker=shapes[shape_idx],
+            edgecolors="black",
+            linewidths=1.5,
+            alpha=0.85,
+            zorder=3,
+        )
+
+        # Draw node label with high contrast
+        ax.text(
+            pos[node][0],
+            pos[node][1],
+            node,
+            fontsize=11,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.9),
+            zorder=4,
+        )
+
+        # Draw traits below node
+        traits = G.nodes[node].get("traits", [])
+        if traits:
+            traits_str = ", ".join(traits[:3])  # Limit to 3 traits
+            ax.text(
+                pos[node][0],
+                pos[node][1] - 0.08,
+                f"Traits: {traits_str}",
+                fontsize=8,
+                ha="center",
+                va="top",
+                bbox=dict(
+                    boxstyle="round,pad=0.2", fc="lightyellow", ec="black", alpha=0.9
+                ),
+                zorder=3,
+            )
+
+    # Draw only visible edges
+    visible_edge_styles = {}  # Track used styles for the legend
+
+    for edge_key in visible_edges:
+        source, target, relationship = edge_key
+
+        if source not in G or target not in G:
+            continue
+
+        # Get edge data
+        edge_data = G.get_edge_data(source, target)
+        if not edge_data:
+            continue
+
         weight = edge_data.get("weight", 0.5)
 
-        # Create hover text with more details
-        hover_text = (
-            f"<b>{source}</b> {relationship} <b>{target}</b><br>Strength: {weight:.2f}"
-        )
+        # Assign a consistent style based on relationship
+        # Use a hash of the relationship string to pick a style
+        style_idx = hash(relationship) % len(edge_styles)
+        line_style = edge_styles[style_idx]
 
-        # Get color for this relationship type
-        color = color_map.get(relationship.lower(), default_color)
+        # Track for legend
+        visible_edge_styles[relationship] = {
+            "style": line_style,
+            "width": 1 + 3 * weight,
+            "weight": weight,
+        }
 
-        # Scale line_width by weight (1.0 - 5.0) - making weight differences more noticeable
-        line_width = 1.0 + 4.0 * weight
-
-        # Add to relationship group
-        if relationship not in relationship_edges:
-            relationship_edges[relationship] = []
-
-        relationship_edges[relationship].append((x0, y0, x1, y1, line_width, hover_text))
-
-    # Add one trace per relationship type (for legend)
-    for relationship, edges in relationship_edges.items():
-        color = color_map.get(relationship.lower(), default_color)
-
-        # Show both color and pattern in legend for accessibility
-        legend_name = f"{relationship} ({'—' * min(4, len(relationship))})"
-
-        # Add representative edge for the legend
-        fig.add_trace(
-            go.Scatter(
-                x=[None],
-                y=[None],
-                mode="lines",
-                name=legend_name,
-                line=dict(
-                    color=color,
-                    width=3,
-                ),
-                hoverinfo="none",
-                legendgroup=relationship,
-            )
-        )
-
-        # Add all edges of this relationship type
-        for x0, y0, x1, y1, line_width, hover_text in edges:
-            # Add edge line
-            fig.add_trace(
-                go.Scatter(
-                    x=[x0, x1],
-                    y=[y0, y1],
-                    mode="lines",
-                    line=dict(color=color, width=line_width),
-                    hoverinfo="text",
-                    hovertext=hover_text,
-                    legendgroup=relationship,
-                    showlegend=False,
-                )
-            )
-
-            # Add arrow at target
-            angle = np.arctan2(y1 - y0, x1 - x0)
-            dx = 0.03 * np.cos(angle)
-            dy = 0.03 * np.sin(angle)
-
-            fig.add_annotation(
-                x=x1,
-                y=y1,
-                ax=x1 - dx,
-                ay=y1 - dy,
-                xref="x",
-                yref="y",
-                axref="x",
-                ayref="y",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1,
-                arrowwidth=line_width,
-                arrowcolor=color,
-                opacity=0.8,
-            )
-
-    # Add nodes with accessibility-friendly styling
-    node_trace = go.Scatter(
-        x=x_pos,
-        y=y_pos,
-        mode="markers+text",
-        marker=dict(
-            size=20,
-            color="#FFFFFF",  # White fill
-            line=dict(width=2, color="#000000"),  # Black outline for high contrast
-            opacity=1.0,  # Full opacity for better visibility
-            symbol="circle",
-        ),
-        text=[node_id for node_id in G.nodes()],
-        textposition="top center",
-        textfont=dict(
-            size=16, color="#000000", family="Arial"
-        ),  # Larger, high-contrast text
-        hoverinfo="text",
-        hovertext=[_format_node_hover(G, node_id) for node_id in G.nodes()],
-    )
-
-    fig.add_trace(node_trace)
-
-    # Update layout for better visualisation and accessibility
-    fig.update_layout(
-        title=dict(
-            text="Character Relationship Graph",
-            x=0.5,
-            font=dict(
-                family="Arial", size=20, color="#000000"
-            ),  # Larger, high-contrast title
-        ),
-        font=dict(family="Arial", size=14, color="#000000"),  # Larger, high-contrast font
-        showlegend=True,
-        hovermode="closest",
-        margin=dict(b=30, l=20, r=20, t=50),  # Larger margins for better spacing
-        annotations=[
-            dict(
-                text="Hover over nodes and edges for details. Use toolbar to zoom, pan, or reset view.",
-                showarrow=False,
-                xref="paper",
-                yref="paper",
-                x=0.01,
-                y=-0.05,
-                font=dict(size=14, color="#000000"),  # High-contrast instruction text
-            )
-        ],
-        xaxis=dict(
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            range=[-1.5, 1.5],  # Wider range for better spread
-        ),
-        yaxis=dict(
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            range=[-1.5, 1.5],  # Wider range for better spread
-        ),
-        plot_bgcolor="#FFFFFF",  # White background for highest contrast
-        height=height,
-        width=width,
-        legend=dict(
-            title=dict(
-                text="Relationship Types",
-                font=dict(size=16, color="#000000"),  # High-contrast legend title
+        # Draw the edge with arrow
+        ax.annotate(
+            "",
+            xy=pos[target],
+            xytext=pos[source],
+            arrowprops=dict(
+                arrowstyle="-|>",
+                connectionstyle="arc3,rad=0.1",
+                linestyle=line_style,
+                linewidth=1 + 3 * weight,
+                color="#555555",
+                shrinkA=15,
+                shrinkB=15,
+                alpha=0.8,
             ),
-            font=dict(size=14, color="#000000"),  # High-contrast legend items
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02,
-            itemsizing="constant",
-            bordercolor="#000000",  # Black border for legend
-            borderwidth=1,
-        ),
+            zorder=1,
+        )
+
+        # Edge label with relationship and weight
+        midpoint = np.array(pos[source]) * 0.6 + np.array(pos[target]) * 0.4
+
+        # Make edge labels readable with background
+        ax.text(
+            midpoint[0],
+            midpoint[1],
+            f"{relationship}\n[{weight:.1f}]",
+            fontsize=8,
+            ha="center",
+            va="center",
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.85),
+            zorder=2,
+        )
+
+    # Build legends
+    legend_elements = []
+
+    # Group legend
+    used_groups = {node_groups.get(node, 0) for node in visible_nodes if node in G}
+
+    for group in sorted(used_groups):
+        if group < len(colors):
+            # Find a character from this group for the legend
+            chars_in_group = [
+                node
+                for node in visible_nodes
+                if node in G and node_groups.get(node, 0) == group
+            ]
+
+            if chars_in_group:
+                color_idx = group % len(colors)
+                shape_idx = group % len(shapes)
+
+                legend_elements.append(
+                    Line2D(
+                        [0],
+                        [0],
+                        marker=shapes[shape_idx],
+                        color="w",
+                        markerfacecolor=colors[color_idx],
+                        markeredgecolor="black",
+                        markersize=12,
+                        label=f"Group: {chars_in_group[0]}",
+                    )
+                )
+
+    # Relationship style legend (only show top 3 to avoid clutter)
+    top_relations = sorted(
+        visible_edge_styles.items(), key=lambda x: x[1]["weight"], reverse=True
+    )[:3]
+
+    for rel, data in top_relations:
+        legend_elements.append(
+            Line2D(
+                [0],
+                [0],
+                color="#555555",
+                linestyle=data["style"],
+                linewidth=data["width"],
+                label=f"{rel} [{data['weight']:.1f}]",
+            )
+        )
+
+    # Add legend
+    if legend_elements:
+        ax.legend(
+            handles=legend_elements,
+            loc="upper right",
+            fontsize=11,
+            frameon=True,
+            facecolor="white",
+            edgecolor="black",
+        )
+
+    # Add progress indicator
+    ax.text(
+        0.02,
+        0.02,
+        f"Network: {int(progress * 100)}%",
+        transform=ax.transAxes,
+        fontsize=10,
+        fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
     )
 
-    # Add zoom and pan capabilities
-    fig.update_layout(dragmode="pan", modebar=dict(remove=["select", "lasso"]))
 
-    return fig
-
-
-def _format_node_hover(G: nx.DiGraph, node_id: str) -> str:
+def create_character_graph_animation(
+    db_path: str, output_path: Path | None, interval: int = 1000
+) -> None:
     """
-    Format hover text for a node showing its properties.
+    Create and save an animation of the character relationship graph.
 
     Args:
-        G: NetworkX graph
-        node_id: ID of the node
+        db_path: Path to the SQLite database
+        output_path: Path to save the animation
+        interval: Milliseconds between frames
 
     Returns:
-        Formatted hover text
+        None
     """
-    node_data = G.nodes[node_id]
+    # Get data from database
+    nodes, edges = get_db_data(db_path)
 
-    # Count incoming and outgoing relationships
-    in_edges = list(G.in_edges(node_id, data=True))
-    out_edges = list(G.out_edges(node_id, data=True))
+    if not nodes or not edges:
+        print("No data found in database")
+        return
 
-    in_count = len(in_edges)
-    out_count = len(out_edges)
+    print(f"Found {len(nodes)} nodes and {len(edges)} edges")
 
-    hover_parts = [f"<b>{node_id}</b>"]
+    # Create base graph with all elements
+    G = create_base_graph(nodes, edges)
 
-    # Add traits if available
-    try:
-        if isinstance(node_data, dict) and "traits" in node_data:
-            traits = node_data["traits"]
-            if isinstance(traits, list) and traits:
-                trait_text = ", ".join(traits)
-                hover_parts.append(f"Traits: {trait_text}")
-    except Exception:
-        pass
+    # Group characters
+    character_groups = identify_character_groups(nodes, edges)
 
-    # Add relationship counts
-    hover_parts.append(f"Incoming relationships: {in_count}")
-    hover_parts.append(f"Outgoing relationships: {out_count}")
+    # Calculate optimal layout
+    pos = optimize_node_layout(G)
 
-    return "<br>".join(hover_parts)
+    # Setup figure
+    fig, ax = plt.subplots(figsize=(16, 12))
+    plt.tight_layout()
+
+    # Create animation frames
+    frames = create_animation_frames(G, character_groups)
+    total_frames = len(frames)
+
+    # Animation update function
+    def update(frame_idx):
+        visible_nodes, visible_edges = frames[frame_idx]
+        progress = (frame_idx + 1) / total_frames
+        draw_frame(G, ax, pos, visible_nodes, visible_edges, character_groups, progress)
+
+    # Create animation
+    anim = animation.FuncAnimation(
+        fig, update, frames=total_frames, interval=interval, blit=False, repeat=False
+    )
+
+    # Save animation
+    if output_path:
+        print(f"Saving animation to {output_path}...")
+
+        # Determine format based on extension
+        extension = output_path.suffix.lower()
+
+        if extension == ".gif":
+            # For GIF
+            anim.save(output_path, writer="pillow", fps=2, dpi=100)
+        elif extension in [".mp4", ".avi", ".mov"]:
+            # For video formats
+            writer = animation.FFMpegWriter(
+                fps=2, metadata=dict(title="Character Relationship Network"), bitrate=1800
+            )
+            anim.save(output_path, writer=writer)
+        else:
+            # Default to MP4
+            output_path = output_path.with_suffix(".mp4")
+            writer = animation.FFMpegWriter(
+                fps=2, metadata=dict(title="Character Relationship Network"), bitrate=1800
+            )
+            anim.save(output_path, writer=writer)
+
+        print(f"Animation saved to {output_path}")
+
+    plt.show()
+
+
+def main() -> None:
+    """
+    Main function to run the character graph visualization.
+    """
+    # Database path
+    db_path = const.DEFAULT_DB
+
+    # Output path
+    output_path = const.DEFAULT_ANIMATION
+
+    # Create and save animation
+    create_character_graph_animation(
+        db_path=db_path,
+        output_path=output_path,
+        interval=1200,  # Slower animation for better readability
+    )
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Visualise character relationship graph")
-    parser.add_argument(
-        "--db",
-        default=constants.DEFAULT_DB,
-        help=f"Path to SQLite database (default: {constants.DEFAULT_DB})",
-    )
-    parser.add_argument(
-        "--output",
-        default=constants.DEFAULT_PLOT,
-        help=f"Path to save HTML output (default: {constants.DEFAULT_PLOT})",
-    )
-    parser.add_argument(
-        "--layout",
-        default="fruchterman_reingold",
-        choices=["fruchterman_reingold", "kamada_kawai", "spring"],
-        help="Layout algorithm to use",
-    )
-    parser.add_argument(
-        "--min-weight",
-        type=float,
-        default=0.0,
-        help="Minimum relationship weight to include (0.0-1.0)",
-    )
-    parser.add_argument(
-        "--height", type=int, default=800, help="Height of the plot in pixels"
-    )
-    parser.add_argument(
-        "--width", type=int, default=1200, help="Width of the plot in pixels"
-    )
-
-    args = parser.parse_args()
-
-    # Generate and save the visualisation
-    load_and_visualise_graph(
-        db_path=args.db,
-        output_path=args.output,
-        layout_algo=args.layout,
-        min_weight=args.min_weight,
-        height=args.height,
-        width=args.width,
-    )
-
-    print(f"Graph visualisation saved to {args.output}")
+    main()

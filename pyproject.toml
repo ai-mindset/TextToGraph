@@ -16,6 +16,7 @@ dependencies = [
     "plotly>=6.0.0", # An open-source, interactive data visualization library for Python
     "networkx>=3.4.2", # Python package for creating and manipulating graphs and networks
     "scipy>=1.15.2", # Fundamental algorithms for scientific computing in Python # NOTE: 'kamada_kawai' from NetworkX requires scipy   
+    "matplotlib>=3.10.0", # Python plotting package 
 ]
 
 [project.optional-dependencies]
@@ -41,7 +42,7 @@ lint.select = ["I", "N", "UP"]
         # `I`: isort
         # `N`: pep8-naming
         # `UP`: pyupgrade
-ignore = ["N803"]
+lint.ignore = ["N803"]
 line-length = 90
 target-version = "py313"
 

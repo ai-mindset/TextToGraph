@@ -1,6 +1,8 @@
 """This module defines a set of constants for use in a text processing application,
 including configuration options for logging, chunking, and client settings."""
 
+from pathlib import Path
+
 from ollama import Client
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field, computed_field
@@ -27,8 +29,8 @@ class Constants(BaseModel):
 
     @computed_field
     @property
-    def DEFAULT_PLOT(self) -> str:  # noqa: N802
-        return self.PLOT_DIRECTORY + "/character_graph.html"
+    def DEFAULT_ANIMATION(self) -> Path:  # noqa: N802
+        return Path(self.PLOT_DIRECTORY + "/character_graph.mp4")
 
     TEXT_DIRECTORY: str = Field(default="text")
     DB_DIRECTORY: str = Field(default="data")
