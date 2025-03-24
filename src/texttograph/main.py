@@ -20,8 +20,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ollama import Client
 from pydantic import BaseModel, Field
 
-from ppcs.constants import Constants
-from ppcs.logger import setup_logger
+from .constants import Constants
+from .logger import setup_logger
 
 # %%
 # Constants instance

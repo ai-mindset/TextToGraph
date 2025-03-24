@@ -4,7 +4,7 @@ import networkx as nx
 import plotly.graph_objects as go
 from plotly.offline import plot
 
-from ppcs.main import logger
+from .main import logger
 
 
 # %%
